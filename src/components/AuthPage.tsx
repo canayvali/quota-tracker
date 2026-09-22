@@ -4,26 +4,35 @@ import {
   CheckCircle2,
   LogIn,
   Mail,
-  Shield,
-  Sparkles,
+  RefreshCw,
   User,
   UserPlus
 } from 'lucide-react';
-import { UserAccount } from '../types';
-import { loadUsers, saveUsers } from '../utils/storage';
+import { AppLanguage, UserAccount } from '../types';
+import { loadEmailConfig, loadUsers, saveUsers } from '../utils/storage';
+import { TRANSLATIONS } from '../utils/translations';
 import { PasswordInput } from './PasswordInput';
+import { LanguageSelector } from './LanguageSelector';
+import { VerificationModal } from './VerificationModal';
 
 interface AuthPageProps {
   onLoginSuccess: (user: UserAccount) => void;
-  onNavigateToAdmin?: () => void;
+  defaultLanguage?: AppLanguage;
 }
 
-export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateToAdmin }) => {
+export const AuthPage: React.FC<AuthPageProps> = ({
+  onLoginSuccess,
+  defaultLanguage = 'tr'
+}) => {
+  // Always default to Turkish on login screen as specified
+  const [language, setLanguage] = useState<AppLanguage>(defaultLanguage || 'tr');
+  const t = TRANSLATIONS[language];
+
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
 
-  // Sign In fields
-  const [loginEmail, setLoginEmail] = useState('ahmetcanayvali@gmail.com');
-  const [loginPassword, setLoginPassword] = useState('password123');
+  // Sign In fields - clean, no pre-filled personal data
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
 
   // Sign Up fields
   const [signupName, setSignupName] = useState('');
@@ -31,10 +40,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
 
+  // Dedicated verification modal pop-up state
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -42,35 +55,82 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
     const password = loginPassword.trim();
 
     if (!email || !password) {
-      setError('Please provide both your email and password.');
+      setError(
+        language === 'tr'
+          ? 'Lütfen e-posta adresinizi ve şifrenizi giriniz.'
+          : 'Please enter both your email address and password.'
+      );
       return;
     }
 
+    setIsLoading(true);
+
+    try {
+      // First try server-side login
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        // Sync preferred language
+        const userLang = data.user.preferredLanguage || language;
+        const loggedUser: UserAccount = {
+          ...data.user,
+          preferredLanguage: userLang
+        };
+
+        const users = loadUsers();
+        const existing = users.find((u) => u.email.toLowerCase() === email);
+        if (!existing) {
+          saveUsers([...users, { ...loggedUser, password }]);
+        }
+        onLoginSuccess(loggedUser);
+        return;
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    // Fallback to local storage
     const users = loadUsers();
     const existing = users.find((u) => u.email.toLowerCase() === email);
 
     if (!existing) {
-      setError('No account found with this email. Please check your credentials or create a new account.');
+      setError(
+        language === 'tr'
+          ? 'Bu e-posta adresiyle kayıtlı hesap bulunamadı. Lütfen bilgilerinizi kontrol ediniz veya yeni hesap oluşturunuz.'
+          : 'No account found with this email. Please check your credentials or create a new account.'
+      );
+      setIsLoading(false);
       return;
     }
 
     if (existing.password && existing.password !== password) {
-      setError('Incorrect password. Please try again.');
+      setError(
+        language === 'tr'
+          ? 'Hatalı şifre. Lütfen tekrar deneyiniz.'
+          : 'Incorrect password. Please try again.'
+      );
+      setIsLoading(false);
       return;
     }
 
-    // Update last login
+    const userLang = existing.preferredLanguage || language;
     const updatedUser: UserAccount = {
       ...existing,
+      preferredLanguage: userLang,
       lastLoginAt: new Date().toISOString()
     };
-    const updatedList = users.map((u) => (u.id === existing.id ? updatedUser : u));
-    saveUsers(updatedList);
-
+    saveUsers(users.map((u) => (u.id === existing.id ? updatedUser : u)));
     onLoginSuccess(updatedUser);
+    setIsLoading(false);
   };
 
-  const handleSignUp = (e: React.FormEvent) => {
+  // Validate form & send 6-digit verification code, then open dedicated pop-up modal
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -80,59 +140,82 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
     const confirm = signupConfirmPassword.trim();
 
     if (!name) {
-      setError('Please enter your full name.');
+      setError(language === 'tr' ? 'Lütfen adınızı ve soyadınızı giriniz.' : 'Please enter your full name.');
       return;
     }
 
     if (!email || !email.includes('@')) {
-      setError('Please enter a valid student notification email.');
+      setError(
+        language === 'tr'
+          ? 'Lütfen geçerli bir e-posta adresi giriniz.'
+          : 'Please enter a valid email address.'
+      );
       return;
     }
 
-    if (!password || password.length < 4) {
-      setError('Password must be at least 4 characters long.');
+    if (!password || password.length < 8) {
+      setError(
+        language === 'tr'
+          ? 'Şifreniz en az 8 karakter uzunluğunda olmalıdır.'
+          : 'Password must be at least 8 characters long.'
+      );
       return;
     }
 
     if (password !== confirm) {
-      setError('Passwords do not match. Please re-enter.');
+      setError(
+        language === 'tr'
+          ? 'Girdiğiniz şifreler birbiriyle eşleşmiyor.'
+          : 'Passwords do not match. Please re-enter.'
+      );
       return;
     }
 
     const users = loadUsers();
     if (users.some((u) => u.email.toLowerCase() === email)) {
-      setError('An account with this email already exists. Please switch to Sign In.');
+      setError(
+        language === 'tr'
+          ? 'Bu e-posta adresiyle kayıtlı bir hesap zaten var. Lütfen giriş yapınız.'
+          : 'An account with this email already exists. Please sign in.'
+      );
       return;
     }
 
-    const newUser: UserAccount = {
-      id: 'user-' + Date.now(),
-      name,
-      email,
-      password,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString()
-    };
+    setIsLoading(true);
 
-    saveUsers([...users, newUser]);
-    setSuccessMsg('Account created successfully! Logging you in...');
+    try {
+      const currentSmtpConfig = loadEmailConfig();
+      const res = await fetch('/api/auth/send-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          name,
+          language,
+          smtpConfig: currentSmtpConfig
+        })
+      });
 
-    setTimeout(() => {
-      onLoginSuccess(newUser);
-    }, 600);
-  };
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(
+          data.message ||
+            (language === 'tr' ? 'Doğrulama kodu gönderilemedi.' : 'Failed to send verification code.')
+        );
+      }
 
-  const handleQuickDemoLogin = () => {
-    const users = loadUsers();
-    const demo = users[0] || {
-      id: 'user-itu-1',
-      name: 'Ahmet Can Ayvalı',
-      email: 'ahmetcanayvali@gmail.com',
-      password: 'password123',
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString()
-    };
-    onLoginSuccess(demo);
+      // Open the dedicated pop-up modal page as requested
+      setIsVerificationModalOpen(true);
+    } catch (err: any) {
+      setError(
+        err.message ||
+          (language === 'tr'
+            ? 'Doğrulama e-postası gönderilemedi. Lütfen internet bağlantınızı kontrol ediniz.'
+            : 'Could not send verification email. Please check your connection.')
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -140,13 +223,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Live Quota Tracker</span>
+          <span>{t.authBadge}</span>
         </div>
         <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
-          Student Portal Login
+          {t.authTitle}
         </h1>
         <p className="text-xs text-stone-500 max-w-sm mx-auto">
-          Sign in or create an account to start tracking CRN quotas. Alert emails will be sent directly to your registered account.
+          {t.authSubtitle}
         </p>
       </div>
 
@@ -160,6 +243,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
               onClick={() => {
                 setMode('signin');
                 setError(null);
+                setSuccessMsg(null);
               }}
               className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 mode === 'signin'
@@ -167,7 +251,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
                   : 'text-stone-500 hover:text-stone-800'
               }`}
             >
-              Sign In
+              {t.tabSignIn}
             </button>
             <button
               id="tab-signup"
@@ -175,6 +259,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
               onClick={() => {
                 setMode('signup');
                 setError(null);
+                setSuccessMsg(null);
               }}
               className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 mode === 'signup'
@@ -182,7 +267,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
                   : 'text-stone-500 hover:text-stone-800'
               }`}
             >
-              Create Account
+              {t.tabSignUp}
             </button>
           </div>
 
@@ -201,10 +286,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
           )}
 
           {mode === 'signin' ? (
+            /* Sign In Form */
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-stone-800 mb-1">
-                  Email Address
+                  {t.emailLabel}
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
@@ -212,7 +298,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
                     id="signin-email"
                     type="email"
                     required
-                    placeholder="student@itu.edu.tr"
+                    placeholder={t.emailPlaceholder}
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
@@ -222,12 +308,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
 
               <div>
                 <label className="block text-xs font-semibold text-stone-800 mb-1">
-                  Password
+                  {t.passwordLabel}
                 </label>
                 <PasswordInput
                   id="signin-password"
                   required
-                  placeholder="••••••••"
+                  placeholder={t.passwordPlaceholder}
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                 />
@@ -236,29 +322,33 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
               <button
                 id="btn-submit-signin"
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 active:scale-98 rounded-xl transition-all shadow-xs cursor-pointer"
+                disabled={isLoading}
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 active:scale-98 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
               >
                 <LogIn className="h-4 w-4" />
-                <span>Sign In to Tracker</span>
+                <span>{isLoading ? t.btnSigningIn : t.btnSignIn}</span>
               </button>
 
-              <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
-                <span>Quick testing?</span>
+              <div className="text-center pt-2 text-[11px] text-stone-500">
+                {t.noAccountPrompt}{' '}
                 <button
                   type="button"
-                  onClick={handleQuickDemoLogin}
-                  className="font-semibold text-amber-700 hover:text-amber-800 underline cursor-pointer flex items-center gap-1"
+                  onClick={() => {
+                    setMode('signup');
+                    setError(null);
+                  }}
+                  className="font-bold text-stone-900 hover:underline cursor-pointer"
                 >
-                  <Sparkles className="h-3 w-3" />
-                  <span>One-click Demo Login</span>
+                  {t.signUpNow}
                 </button>
               </div>
             </form>
           ) : (
-            <form onSubmit={handleSignUp} className="space-y-3.5">
+            /* Sign Up: Account Information */
+            <form onSubmit={handleSignUpSubmit} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-stone-800 mb-1">
-                  Full Name
+                  {t.nameLabel}
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
@@ -266,7 +356,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
                     id="signup-name"
                     type="text"
                     required
-                    placeholder="e.g. Ahmet Can Ayvalı"
+                    placeholder={t.namePlaceholder}
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
@@ -276,7 +366,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
 
               <div>
                 <label className="block text-xs font-semibold text-stone-800 mb-1">
-                  Notification Email <span className="text-red-500">*</span>
+                  {t.signupEmailLabel} <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
@@ -284,25 +374,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
                     id="signup-email"
                     type="email"
                     required
-                    placeholder="e.g. ahmetcanayvali@gmail.com"
+                    placeholder={t.emailPlaceholder}
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
                   />
                 </div>
                 <p className="text-[10px] text-stone-400 mt-1">
-                  All seat opening alerts will be delivered directly to this email address.
+                  {t.signupEmailHint}
                 </p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-stone-800 mb-1">
-                  Password
+                  {t.passwordLabel} <span className="text-stone-400 font-normal">({language === 'tr' ? 'En az 8 hane' : 'At least 8 chars'})</span>
                 </label>
                 <PasswordInput
                   id="signup-password"
                   required
-                  placeholder="Create a password"
+                  placeholder={language === 'tr' ? 'En az 8 karakter' : 'At least 8 characters'}
                   value={signupPassword}
                   onChange={(e) => setSignupPassword(e.target.value)}
                 />
@@ -310,46 +400,62 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess, onNavigateTo
 
               <div>
                 <label className="block text-xs font-semibold text-stone-800 mb-1">
-                  Confirm Password
+                  {t.confirmPasswordLabel}
                 </label>
                 <PasswordInput
                   id="signup-confirm"
                   required
-                  placeholder="Re-enter password"
+                  placeholder={t.confirmPasswordPlaceholder}
                   value={signupConfirmPassword}
                   onChange={(e) => setSignupConfirmPassword(e.target.value)}
                 />
               </div>
 
               <button
-                id="btn-submit-signup"
+                id="btn-create-account"
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 active:scale-98 rounded-xl transition-all shadow-xs cursor-pointer"
+                disabled={isLoading}
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 active:scale-98 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50 mt-2"
               >
-                <UserPlus className="h-4 w-4" />
-                <span>Create Student Account</span>
+                {isLoading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>{t.btnCreatingAccount}</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 text-cyan-400" />
+                    <span>{t.btnCreateAccount}</span>
+                  </>
+                )}
               </button>
             </form>
           )}
-
-          <div className="text-[11px] text-stone-400 text-center pt-2">
-            Accounts are safely stored in your browser workspace and will connect to a persistent database in production.
-          </div>
         </div>
 
-        {/* Footer Admin link */}
-        {onNavigateToAdmin && (
-          <div className="mt-4 text-center">
-            <button
-              onClick={onNavigateToAdmin}
-              className="text-xs text-stone-500 hover:text-stone-800 transition-colors inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Shield className="h-3 w-3 text-stone-400" />
-              <span>Are you an administrator? Go to /admin</span>
-            </button>
-          </div>
-        )}
+        {/* Mid Bottom Language Selector as requested by user */}
+        <div id="login-mid-bottom-language-selector" className="mt-5 flex justify-center">
+          <LanguageSelector
+            language={language}
+            onChangeLanguage={setLanguage}
+            variant="login"
+          />
+        </div>
       </div>
+
+      {/* Dedicated Verification Code Pop-up Modal */}
+      <VerificationModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => setIsVerificationModalOpen(false)}
+        email={signupEmail}
+        name={signupName}
+        password={signupPassword}
+        language={language}
+        onVerificationSuccess={(user) => {
+          setIsVerificationModalOpen(false);
+          onLoginSuccess(user);
+        }}
+      />
     </div>
   );
 };

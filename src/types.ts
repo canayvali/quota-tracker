@@ -14,11 +14,15 @@ export interface QuotaHistoryEvent {
 
 export type AlertTriggerPreference = 'any_change' | 'seats_opened_only' | 'waitlist_or_seats';
 
+export type AppLanguage = 'tr' | 'en';
+
 export interface UserAccount {
   id: string;
   name: string;
   email: string;
   password?: string;
+  isVerified?: boolean;
+  preferredLanguage?: AppLanguage;
   createdAt: string;
   lastLoginAt: string;
 }

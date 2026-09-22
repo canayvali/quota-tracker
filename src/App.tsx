@@ -7,15 +7,13 @@ import {
   CheckCircle2,
   Globe,
   Loader2,
-  LogOut,
   Mail,
   Search,
-  Shield,
   Sparkles,
   Zap
 } from 'lucide-react';
 
-import { ClassMonitor, EmailSenderConfig, GlobalSettings, ItuCourse, UserAccount } from './types';
+import { AppLanguage, ClassMonitor, EmailSenderConfig, GlobalSettings, ItuCourse, UserAccount } from './types';
 import {
   checkAdminAuth,
   clearCurrentUser,
@@ -27,7 +25,8 @@ import {
   saveEmailConfig,
   saveMonitors,
   saveSettings,
-  setAdminAuth
+  setAdminAuth,
+  updateUserLanguage
 } from './utils/storage';
 import {
   generateEmailHtml,
@@ -36,6 +35,7 @@ import {
   simulateDropSeat
 } from './utils/quotaService';
 import { fetchCourseByCrn } from './utils/ituScraperService';
+import { TRANSLATIONS } from './utils/translations';
 
 import { Header } from './components/Header';
 import { MonitorCard } from './components/MonitorCard';
@@ -45,8 +45,9 @@ import { EmailSentPreviewModal } from './components/EmailSentPreviewModal';
 import { HistoryModal } from './components/HistoryModal';
 import { SourceInspectorModal } from './components/SourceInspectorModal';
 import { ItuObsBrowserModal } from './components/ItuObsBrowserModal';
-import { AdminPortalModal } from './components/AdminPortalModal';
+import { AdminPage } from './components/AdminPage';
 import { AuthPage } from './components/AuthPage';
+import { ProfileModal } from './components/ProfileModal';
 
 const SAMPLE_CRN_CHIPS = [
   { crn: '12486', code: 'BLG 212E' },
@@ -57,11 +58,43 @@ const SAMPLE_CRN_CHIPS = [
 ];
 
 export default function App() {
-  // Navigation / Routing (/admin vs /)
-  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
+  // Navigation / Routing (/admin vs /) - supports direct /admin path or #/admin
+  const [currentPath, setCurrentPath] = useState<string>(() => {
+    const p = window.location.pathname;
+    const h = window.location.hash;
+    if (p === '/admin' || p.startsWith('/admin/') || h === '#/admin' || h.startsWith('#/admin/')) {
+      return '/admin';
+    }
+    return p;
+  });
 
   // User Authentication state
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => loadCurrentUser());
+
+  // Language state: defaults to Turkish on login screen, or user's saved preference
+  const [language, setLanguage] = useState<AppLanguage>(() => {
+    const user = loadCurrentUser();
+    if (user && user.preferredLanguage) {
+      return user.preferredLanguage;
+    }
+    return 'tr'; // Default to Turkish on login / initial screen
+  });
+
+  const t = TRANSLATIONS[language];
+
+  // Handler to switch language and persist for the logged-in account
+  const handleLanguageChange = (newLang: AppLanguage) => {
+    setLanguage(newLang);
+    if (currentUser) {
+      const updatedUser: UserAccount = {
+        ...currentUser,
+        preferredLanguage: newLang
+      };
+      setCurrentUser(updatedUser);
+      saveCurrentUser(updatedUser);
+      updateUserLanguage(currentUser.email, newLang);
+    }
+  };
 
   // Scroll state for header collapse
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
@@ -88,7 +121,7 @@ export default function App() {
   const [isEmailConfigModalOpen, setIsEmailConfigModalOpen] = useState(false);
   const [isSourceInspectorOpen, setIsSourceInspectorOpen] = useState(false);
   const [isItuObsBrowserOpen, setIsItuObsBrowserOpen] = useState(false);
-  const [isAdminPortalOpen, setIsAdminPortalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(() => window.location.pathname === '/profile');
   const [selectedHistoryMonitor, setSelectedHistoryMonitor] = useState<ClassMonitor | null>(null);
 
   // Email Preview Modal
@@ -117,20 +150,49 @@ export default function App() {
 
   // Listen to browser navigation & back/forward buttons
   useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname);
+    const handleLocationChange = () => {
+      const p = window.location.pathname;
+      const h = window.location.hash;
+      if (p === '/admin' || p.startsWith('/admin/') || h === '#/admin' || h.startsWith('#/admin/')) {
+        setCurrentPath('/admin');
+      } else {
+        setCurrentPath(p);
+      }
+      if (p === '/profile') {
+        setIsProfileModalOpen(true);
+      }
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
   }, []);
 
-  // Listen to scroll to collapse header when scrolling down
+  // Synchronize active admin SMTP configuration from local storage to server state on startup
   useEffect(() => {
+    fetch('/api/email/save-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ smtpConfig: emailConfig })
+    }).catch((err) => console.error('[Initial SMTP Sync Error]:', err));
+  }, []);
+
+  // Listen to scroll to collapse header smoothly when scrolling down
+  useEffect(() => {
+    let rafId: number;
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 40);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        setIsScrolled(window.scrollY > 30);
+      });
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const navigateTo = (path: string) => {
@@ -141,13 +203,28 @@ export default function App() {
   const handleLoginSuccess = (user: UserAccount) => {
     setCurrentUser(user);
     saveCurrentUser(user);
-    showToast('Signed In', `Welcome back, ${user.name}! Alerts will go to ${user.email}.`, 'success');
+    const activeLang = user.preferredLanguage || language;
+    setLanguage(activeLang);
+    showToast(
+      activeLang === 'tr' ? 'Giriş Başarılı' : 'Signed In',
+      activeLang === 'tr'
+        ? `Hoş geldiniz, ${user.name}! Bildirimler ${user.email} adresine gönderilecek.`
+        : `Welcome back, ${user.name}! Alerts will go to ${user.email}.`,
+      'success'
+    );
   };
 
   const handleSignOut = () => {
     setCurrentUser(null);
     clearCurrentUser();
-    showToast('Signed Out', 'You have been signed out.', 'info');
+    setIsProfileModalOpen(false);
+    // If it's login screen, select Turkish by default as requested
+    setLanguage('tr');
+    showToast(
+      'Oturum Kapatıldı',
+      'Başarıyla çıkış yaptınız.',
+      'info'
+    );
   };
 
   const handleSetAdminAuth = (auth: boolean) => {
@@ -421,10 +498,13 @@ export default function App() {
     const target = monitors.find((m) => m.id === id);
     if (!target) return;
 
+    const userLang = currentUser?.preferredLanguage || language || 'tr';
+
     const { updatedMonitor, emailSent, historyEvent } = simulateDropSeat(
       target,
       emailConfig,
-      settings.soundAlert
+      settings.soundAlert,
+      userLang
     );
 
     setMonitors((prev) => prev.map((m) => (m.id === id ? updatedMonitor : m)));
@@ -435,12 +515,16 @@ export default function App() {
         historyEvent.oldAvailable,
         historyEvent.newAvailable,
         emailConfig,
-        'seat_dropped'
+        'seat_dropped',
+        undefined,
+        userLang
       );
       dispatchNotificationEmail(target.notificationEmail, historyEvent.emailSubject, body);
       showToast(
-        'Kontenjan açıldı - Biri dersi bıraktı',
-        `E-posta bildirimi ${target.notificationEmail} adresine gönderildi.`,
+        userLang === 'en' ? 'Seat Opened - Student Dropped' : 'Kontenjan açıldı - Biri dersi bıraktı',
+        userLang === 'en'
+          ? `Alert email sent to ${target.notificationEmail}.`
+          : `E-posta bildirimi ${target.notificationEmail} adresine gönderildi.`,
         'alert'
       );
       setEmailPreviewData({
@@ -459,16 +543,21 @@ export default function App() {
     const target = monitors.find((m) => m.id === id);
     if (!target) return;
 
+    const userLang = currentUser?.preferredLanguage || language || 'tr';
+
     const { updatedMonitor } = simulateClaimSeat(
       target,
       emailConfig,
-      settings.soundAlert
+      settings.soundAlert,
+      userLang
     );
 
     setMonitors((prev) => prev.map((m) => (m.id === id ? updatedMonitor : m)));
     showToast(
-      'Kontenjan Güncellendi',
-      `Ders alındı: ${updatedMonitor.availableSeats} boş yer kaldı. (Azalma veya dolma için e-posta gönderilmez)`,
+      userLang === 'en' ? 'Quota Updated' : 'Kontenjan Güncellendi',
+      userLang === 'en'
+        ? `Seat taken: ${updatedMonitor.availableSeats} remaining seats. (No email sent for full or decrease)`
+        : `Ders alındı: ${updatedMonitor.availableSeats} boş yer kaldı. (Azalma veya dolma için e-posta gönderilmez)`,
       'info'
     );
   };
@@ -478,11 +567,14 @@ export default function App() {
     const target = monitors.find((m) => m.id === id);
     if (!target) return;
 
+    const userLang = currentUser?.preferredLanguage || language || 'tr';
+
     const { updatedMonitor, emailSent, historyEvent } = simulateCapacityIncrease(
       target,
       5,
       emailConfig,
-      settings.soundAlert
+      settings.soundAlert,
+      userLang
     );
 
     setMonitors((prev) => prev.map((m) => (m.id === id ? updatedMonitor : m)));
@@ -494,12 +586,15 @@ export default function App() {
         historyEvent.newAvailable,
         emailConfig,
         'capacity_increase',
-        { oldCapacity: target.totalCapacity, newCapacity: target.totalCapacity + 5 }
+        { oldCapacity: target.totalCapacity, newCapacity: target.totalCapacity + 5 },
+        userLang
       );
       dispatchNotificationEmail(target.notificationEmail, historyEvent.emailSubject, body);
       showToast(
-        'Kontenjan arttırıldı!',
-        `Bölüm kontenjanı artırdı (+5). E-posta bildirimi ${target.notificationEmail} adresine iletildi.`,
+        userLang === 'en' ? 'Quota Increased!' : 'Kontenjan arttırıldı!',
+        userLang === 'en'
+          ? `Department increased quota (+5). Email sent to ${target.notificationEmail}.`
+          : `Bölüm kontenjanı artırdı (+5). E-posta bildirimi ${target.notificationEmail} adresine iletildi.`,
         'alert'
       );
       setEmailPreviewData({
@@ -513,6 +608,7 @@ export default function App() {
 
   // Send test email
   const handleSendTestEmail = async (recipientEmail: string, customSubject?: string) => {
+    const userLang = currentUser?.preferredLanguage || language || 'tr';
     const sampleMonitor = monitors[0] || {
       id: 'test',
       crn: '12486',
@@ -532,7 +628,15 @@ export default function App() {
       history: []
     };
 
-    const { subject, body } = generateEmailHtml(sampleMonitor, 0, 1, emailConfig, 'seat_dropped');
+    const { subject, body } = generateEmailHtml(
+      sampleMonitor,
+      0,
+      1,
+      emailConfig,
+      'seat_dropped',
+      undefined,
+      userLang
+    );
     const finalSubject = customSubject || `[TEST ALERT] ${subject}`;
 
     setEmailPreviewData({
@@ -604,66 +708,37 @@ export default function App() {
     0
   );
 
-  // ROUTE 1: Dedicated Admin Route (/admin)
+  // ROUTE 1: Dedicated Admin Route (/admin) - Ayrı sekme / Full Page Admin
   const isAdminRoute = currentPath === '/admin' || currentPath.startsWith('/admin/');
   if (isAdminRoute) {
     return (
-      <div className="min-h-screen bg-[#FBFBFA] text-stone-900 flex flex-col font-sans">
-        {/* Admin Navigation Bar */}
-        <div className="bg-stone-900 text-white px-4 sm:px-6 py-3 border-b border-stone-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigateTo('/')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-stone-800 hover:bg-stone-700 text-stone-200 transition-colors cursor-pointer"
-            >
-              <span>← Exit to Student Tracker</span>
-            </button>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm">İTÜ OBS Admin Portal</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono">
-                /admin
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isAdminAuthenticated ? (
-              <button
-                onClick={() => handleSetAdminAuth(false)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>Log Out Admin</span>
-              </button>
-            ) : (
-              <span className="text-xs text-stone-400 font-mono">Password: HelloWorld</span>
-            )}
-          </div>
-        </div>
-
-        {/* Admin Portal Modal rendered full-screen in route mode */}
-        <AdminPortalModal
-          isOpen={true}
-          onClose={() => navigateTo('/')}
-          monitors={monitors}
-          emailConfig={emailConfig}
-          settings={settings}
-          onSaveEmailConfig={(newCfg) => {
-            setEmailConfig(newCfg);
-            showToast('Email Account Updated', `Outgoing notifications will be sent from ${newCfg.senderAddress}.`, 'success');
-          }}
-          onUpdateSettings={(newStg) => {
-            setSettings(newStg);
-            showToast('Settings Updated', 'Global monitoring parameters saved.', 'success');
-          }}
-          onTogglePauseMonitor={handleTogglePause}
-          onDeleteMonitor={handleDeleteMonitor}
-          onForceCheckMonitor={handleCheckNow}
-          onSendTestEmail={handleSendTestEmail}
-          isAdminAuthenticated={isAdminAuthenticated}
-          onSetAdminAuthenticated={handleSetAdminAuth}
-        />
-      </div>
+      <AdminPage
+        onExit={() => navigateTo('/')}
+        monitors={monitors}
+        emailConfig={emailConfig}
+        settings={settings}
+        onSaveEmailConfig={(newCfg) => {
+          setEmailConfig(newCfg);
+          saveEmailConfig(newCfg);
+          fetch('/api/email/save-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ smtpConfig: newCfg })
+          }).catch((err) => console.error('[Save SMTP Error]:', err));
+          showToast('SMTP Ayarları Güncellendi', `E-postalar ${newCfg.senderAddress} adresinden iletilecektir.`, 'success');
+        }}
+        onUpdateSettings={(newStg) => {
+          setSettings(newStg);
+          saveSettings(newStg);
+          showToast('Ayarlar Güncellendi', 'Genel sistem parametreleri kaydedildi.', 'success');
+        }}
+        onTogglePauseMonitor={handleTogglePause}
+        onDeleteMonitor={handleDeleteMonitor}
+        onForceCheckMonitor={handleCheckNow}
+        onSendTestEmail={handleSendTestEmail}
+        isAdminAuthenticated={isAdminAuthenticated}
+        onSetAdminAuthenticated={handleSetAdminAuth}
+      />
     );
   }
 
@@ -672,7 +747,7 @@ export default function App() {
     return (
       <AuthPage
         onLoginSuccess={handleLoginSuccess}
-        onNavigateToAdmin={() => navigateTo('/admin')}
+        defaultLanguage="tr"
       />
     );
   }
@@ -694,16 +769,18 @@ export default function App() {
         }
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenItuObsModal={() => setIsItuObsBrowserOpen(true)}
-        onOpenAdminPortalModal={() => {
-          // Navigates to /admin directly while keeping the button as requested
-          navigateTo('/admin');
-        }}
-        isAdminAuthenticated={isAdminAuthenticated}
         onManualRefreshAll={handleRefreshAll}
         isRefreshingAll={isRefreshingAll}
         isScrolled={isScrolled}
         currentUser={currentUser}
         onSignOut={handleSignOut}
+        onOpenProfile={() => {
+          setIsProfileModalOpen(true);
+          window.history.pushState({}, '', '/profile');
+          setCurrentPath('/profile');
+        }}
+        language={language}
+        onChangeLanguage={handleLanguageChange}
       />
 
       {/* Main Content Area */}
@@ -723,7 +800,7 @@ export default function App() {
                 <input
                   id="main-crn-input"
                   type="text"
-                  placeholder="Enter 5-digit CRN (e.g. 12486)"
+                  placeholder={t.quickCrnPlaceholder}
                   maxLength={6}
                   value={quickCrn}
                   onChange={(e) => {
@@ -743,11 +820,11 @@ export default function App() {
                 {isQuickLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
-                    <span>Gathering from İTÜ OBS...</span>
+                    <span>{t.gatheringFromObs}</span>
                   </>
                 ) : (
                   <>
-                    <span>Track CRN</span>
+                    <span>{t.btnTrackCrn}</span>
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}
@@ -764,7 +841,7 @@ export default function App() {
             {/* Quick helper line with 1-click popular CRNs & Account indicator */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-stone-500">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-stone-400">Quick samples:</span>
+                <span className="text-stone-400">{t.quickSamples}:</span>
                 {SAMPLE_CRN_CHIPS.map((chip) => (
                   <button
                     key={chip.crn}
@@ -782,7 +859,7 @@ export default function App() {
 
               <div className="flex items-center gap-1 text-stone-400">
                 <Mail className="h-3 w-3 text-stone-400" />
-                <span>Alert destination:</span>
+                <span>{t.alertDestination}:</span>
                 <span className="font-semibold text-stone-700 font-mono">{currentUser.email}</span>
               </div>
             </div>
@@ -801,7 +878,7 @@ export default function App() {
               </div>
               <div>
                 <div className="text-lg font-extrabold text-stone-900">{monitors.length}</div>
-                <div className="text-[11px] text-stone-500 font-medium">Monitored Classes</div>
+                <div className="text-[11px] text-stone-500 font-medium">{t.statsActive}</div>
               </div>
             </div>
 
@@ -823,7 +900,7 @@ export default function App() {
                 >
                   {openSeatsCount}
                 </div>
-                <div className="text-[11px] text-stone-500 font-medium">Seats Currently Open</div>
+                <div className="text-[11px] text-stone-500 font-medium">{t.statsOpenSeats}</div>
               </div>
             </div>
 
@@ -835,7 +912,7 @@ export default function App() {
                 <div className="text-lg font-extrabold text-stone-900 font-mono">
                   {totalEmailsSent}
                 </div>
-                <div className="text-[11px] text-stone-500 font-medium">Alert Emails Sent</div>
+                <div className="text-[11px] text-stone-500 font-medium">{t.statsEmails}</div>
               </div>
             </div>
 
@@ -851,7 +928,7 @@ export default function App() {
                   <span>obs.itu.edu.tr</span>
                   <span className="text-[10px] text-stone-400">↗</span>
                 </button>
-                <div className="text-[11px] text-stone-500 font-medium">Source Web Page</div>
+                <div className="text-[11px] text-stone-500 font-medium">{t.statsSourceWebPage}</div>
               </div>
             </div>
           </section>
@@ -866,7 +943,7 @@ export default function App() {
               <input
                 id="search-monitors"
                 type="text"
-                placeholder="Search by CRN, code (e.g. BLG 212E), title..."
+                placeholder={t.searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-200 bg-white placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
@@ -876,10 +953,10 @@ export default function App() {
             {/* Filter Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
               {[
-                { id: 'all', label: 'All Classes' },
-                { id: 'open', label: 'Seats Open' },
-                { id: 'full', label: 'Full Only' },
-                { id: 'paused', label: 'Paused' }
+                { id: 'all', label: t.filterAll },
+                { id: 'open', label: t.filterOpen },
+                { id: 'full', label: t.filterFull },
+                { id: 'paused', label: t.filterPaused }
               ].map((f) => (
                 <button
                   key={f.id}
@@ -908,10 +985,14 @@ export default function App() {
             </div>
             <div className="space-y-1.5">
               <h3 className="text-base font-bold text-stone-900">
-                Start by entering a CRN above
+                {t.emptyStateTitle}
               </h3>
               <p className="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
-                Just provide the 5-digit CRN from İTÜ. The system queries <span className="font-mono text-stone-700">obs.itu.edu.tr</span>, gathers course title, instructor, schedule, and live quota, and emails you at <span className="font-semibold text-stone-800">{currentUser.email}</span> as soon as a seat opens or changes.
+                {language === 'tr' ? (
+                  <>İTÜ'deki 5 haneli CRN kodunu girmeniz yeterlidir. Sistem <span className="font-mono text-stone-700">obs.itu.edu.tr</span> adresini sorgular, ders adı, hoca ve anlık kontenjanı alır ve yer açıldığında <span className="font-semibold text-stone-800">{currentUser.email}</span> adresinize e-posta gönderir.</>
+                ) : (
+                  <>Just provide the 5-digit CRN from İTÜ. The system queries <span className="font-mono text-stone-700">obs.itu.edu.tr</span>, gathers course title, instructor, schedule, and live quota, and emails you at <span className="font-semibold text-stone-800">{currentUser.email}</span> as soon as a seat opens.</>
+                )}
               </p>
             </div>
 
@@ -921,14 +1002,18 @@ export default function App() {
                 className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300/80 rounded-xl transition-all cursor-pointer shadow-2xs"
               >
                 <BookOpen className="h-4 w-4 text-amber-700" />
-                <span>Browse İTÜ OBS Subjects (BLG, CEV, MAT...)</span>
+                <span>{t.btnObsSchedule}</span>
               </button>
             </div>
           </div>
         ) : filteredMonitors.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 max-w-md mx-auto space-y-2">
-            <h4 className="text-sm font-bold text-stone-800">No classes match "{searchQuery}"</h4>
-            <p className="text-xs text-stone-500">Try clearing the search query or changing filters.</p>
+            <h4 className="text-sm font-bold text-stone-800">
+              {language === 'tr' ? `"${searchQuery}" ile eşleşen ders bulunamadı` : `No classes match "${searchQuery}"`}
+            </h4>
+            <p className="text-xs text-stone-500">
+              {language === 'tr' ? 'Arama terimini temizlemeyi veya filtreleri değiştirmeyi deneyebilirsiniz.' : 'Try clearing the search query or changing filters.'}
+            </p>
             <button
               onClick={() => {
                 setSearchQuery('');
@@ -936,7 +1021,7 @@ export default function App() {
               }}
               className="text-xs text-stone-900 font-semibold underline pt-1 cursor-pointer"
             >
-              Reset filters
+              {language === 'tr' ? 'Filtreleri sıfırla' : 'Reset filters'}
             </button>
           </div>
         ) : (
@@ -953,6 +1038,7 @@ export default function App() {
                 onDelete={handleDeleteMonitor}
                 onViewHistory={(m) => setSelectedHistoryMonitor(m)}
                 isChecking={!!checkingIds[mon.id]}
+                language={language}
               />
             ))}
           </div>
@@ -965,25 +1051,25 @@ export default function App() {
         >
           <h2 className="text-xs font-bold text-stone-900 mb-3 flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            <span>How This Quota Monitor Works for İTÜ Students</span>
+            <span>{t.howItWorksTitle}</span>
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-stone-600">
             <div className="p-3 bg-[#FAF9F5] rounded-xl border border-stone-200/70">
-              <div className="font-bold text-stone-900 mb-1">1. Enter Only the CRN</div>
+              <div className="font-bold text-stone-900 mb-1">{t.step1Title}</div>
               <p className="leading-relaxed">
-                No need to type course titles, instructors, or your email each time. Enter any 5-digit CRN and all details are auto-gathered directly from <strong>obs.itu.edu.tr</strong>.
+                {t.step1Desc}
               </p>
             </div>
             <div className="p-3 bg-[#FAF9F5] rounded-xl border border-stone-200/70">
-              <div className="font-bold text-stone-900 mb-1">2. Live Background Checking</div>
+              <div className="font-bold text-stone-900 mb-1">{t.step2Title}</div>
               <p className="leading-relaxed">
-                The tracker continuously queries the university's quota records without you having to repeatedly refresh during registration rush.
+                {t.step2Desc}
               </p>
             </div>
             <div className="p-3 bg-[#FAF9F5] rounded-xl border border-stone-200/70">
-              <div className="font-bold text-stone-900 mb-1">3. Automated Email Alert</div>
+              <div className="font-bold text-stone-900 mb-1">{t.step3Title}</div>
               <p className="leading-relaxed">
-                When a quota change occurs (e.g. a student drops and a seat opens), an alert is dispatched straight to <strong>{currentUser.email}</strong>.
+                {t.step3Desc.replace('{email}', currentUser.email)}
               </p>
             </div>
           </div>
@@ -1003,14 +1089,6 @@ export default function App() {
             >
               <BookOpen className="h-3.5 w-3.5" />
               <span>İTÜ OBS Browser</span>
-            </button>
-            <span>•</span>
-            <button
-              onClick={() => navigateTo('/admin')}
-              className="hover:text-stone-800 transition-colors cursor-pointer font-medium flex items-center gap-1 text-stone-700"
-            >
-              <Shield className="h-3.5 w-3.5 text-stone-500" />
-              <span>Admin Page (/admin)</span>
             </button>
             <span>•</span>
             <button
@@ -1039,28 +1117,6 @@ export default function App() {
         monitors={monitors}
         onTrackCourse={handleTrackItuCourse}
         defaultEmail={currentUser.email}
-      />
-
-      <AdminPortalModal
-        isOpen={isAdminPortalOpen}
-        onClose={() => setIsAdminPortalOpen(false)}
-        monitors={monitors}
-        emailConfig={emailConfig}
-        settings={settings}
-        onSaveEmailConfig={(newCfg) => {
-          setEmailConfig(newCfg);
-          showToast('Email Account Updated', `Outgoing notifications will be sent from ${newCfg.senderAddress}.`, 'success');
-        }}
-        onUpdateSettings={(newStg) => {
-          setSettings(newStg);
-          showToast('Settings Updated', 'Global monitoring parameters saved.', 'success');
-        }}
-        onTogglePauseMonitor={handleTogglePause}
-        onDeleteMonitor={handleDeleteMonitor}
-        onForceCheckMonitor={handleCheckNow}
-        onSendTestEmail={handleSendTestEmail}
-        isAdminAuthenticated={isAdminAuthenticated}
-        onSetAdminAuthenticated={handleSetAdminAuth}
       />
 
       <EmailSenderConfigModal
@@ -1094,7 +1150,9 @@ export default function App() {
             event.oldAvailable,
             event.newAvailable,
             emailConfig,
-            isCap ? 'capacity_increase' : 'seat_dropped'
+            isCap ? 'capacity_increase' : 'seat_dropped',
+            undefined,
+            currentUser?.preferredLanguage || language || 'tr'
           );
           setEmailPreviewData({
             recipient: event.emailRecipient,
@@ -1111,6 +1169,29 @@ export default function App() {
         defaultUrl={settings.defaultQuotaUrl}
         monitors={monitors}
       />
+
+      {currentUser && (
+        <ProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => {
+            setIsProfileModalOpen(false);
+            if (currentPath === '/profile') {
+              window.history.pushState({}, '', '/');
+              setCurrentPath('/');
+            }
+          }}
+          currentUser={currentUser}
+          onUpdateUser={(updated) => {
+            setCurrentUser(updated);
+            saveCurrentUser(updated);
+            showToast(t.passwordUpdatedToast, t.passwordUpdatedToastDesc, 'success');
+          }}
+          onSignOut={handleSignOut}
+          monitorsCount={monitors.length}
+          language={language}
+          onChangeLanguage={handleLanguageChange}
+        />
+      )}
 
       {/* Floating Toast Notification */}
       <AnimatePresence>

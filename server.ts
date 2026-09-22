@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
 
@@ -293,8 +294,18 @@ const BREVO_SMTP_DEFAULTS = {
   host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
   port: parseInt(process.env.SMTP_PORT || '587', 10),
   user: process.env.SMTP_USER || 'ba7eed001@smtp-brevo.com',
-  pass: process.env.SMTP_PASS || 'xsmtpsib-d38db62788b3cffbc0ec7eb1d05453633fc71731870670d9fceed4dcea692cf1-WY7mckdl4MC0VvJ8',
+  pass: process.env.SMTP_PASS || 'bskD981CTehLLJb',
 };
+
+// Store active SMTP config synchronized from admin panel
+let activeServerSmtpConfig: {
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUsername?: string;
+  smtpPassword?: string;
+  senderAddress?: string;
+  senderName?: string;
+} | null = null;
 
 function createTransporter(customConfig?: {
   host?: string;
@@ -302,15 +313,20 @@ function createTransporter(customConfig?: {
   user?: string;
   pass?: string;
 }) {
-  const host = customConfig?.host || BREVO_SMTP_DEFAULTS.host;
-  const port = customConfig?.port || BREVO_SMTP_DEFAULTS.port;
-  const user = customConfig?.user || BREVO_SMTP_DEFAULTS.user;
-  const pass = customConfig?.pass || BREVO_SMTP_DEFAULTS.pass;
+  const host = customConfig?.host || activeServerSmtpConfig?.smtpHost || BREVO_SMTP_DEFAULTS.host;
+  const port = customConfig?.port || activeServerSmtpConfig?.smtpPort || BREVO_SMTP_DEFAULTS.port;
+  const user = customConfig?.user || activeServerSmtpConfig?.smtpUsername || BREVO_SMTP_DEFAULTS.user;
+  let pass = customConfig?.pass || activeServerSmtpConfig?.smtpPassword || BREVO_SMTP_DEFAULTS.pass;
+
+  // If old expired or revoked Brevo key is passed from stale client storage, use active credentials
+  if (!pass || pass.startsWith('xsmtpsib-') || pass === '••••••••••••••••') {
+    pass = process.env.SMTP_PASS || 'bskD981CTehLLJb';
+  }
 
   return nodemailer.createTransport({
     host,
     port,
-    secure: port === 465,
+    secure: Number(port) === 465,
     auth: {
       user,
       pass,
@@ -321,10 +337,46 @@ function createTransporter(customConfig?: {
   });
 }
 
+// Endpoint to save & sync SMTP configuration from admin panel
+app.post('/api/email/save-config', (req, res) => {
+  const { smtpConfig } = req.body || {};
+  if (smtpConfig) {
+    activeServerSmtpConfig = {
+      smtpHost: smtpConfig.smtpHost,
+      smtpPort: smtpConfig.smtpPort,
+      smtpUsername: smtpConfig.smtpUsername,
+      smtpPassword: smtpConfig.smtpPassword,
+      senderAddress: smtpConfig.senderAddress,
+      senderName: smtpConfig.senderName,
+    };
+    console.log('[Server SMTP] Admin SMTP configuration synchronized to server:', {
+      host: activeServerSmtpConfig.smtpHost,
+      port: activeServerSmtpConfig.smtpPort,
+      user: activeServerSmtpConfig.smtpUsername,
+      senderAddress: activeServerSmtpConfig.senderAddress,
+      senderName: activeServerSmtpConfig.senderName
+    });
+  }
+  return res.json({
+    success: true,
+    message: 'Admin SMTP configuration successfully synchronized on server.'
+  });
+});
+
+app.get('/api/email/config', (req, res) => {
+  return res.json({
+    success: true,
+    config: activeServerSmtpConfig || BREVO_SMTP_DEFAULTS
+  });
+});
+
 // Verify SMTP connection
 app.post('/api/email/verify-connection', async (req, res) => {
   try {
     const { smtpConfig } = req.body || {};
+    if (smtpConfig) {
+      activeServerSmtpConfig = smtpConfig;
+    }
     const transporter = createTransporter(smtpConfig ? {
       host: smtpConfig.smtpHost,
       port: smtpConfig.smtpPort,
@@ -335,7 +387,7 @@ app.post('/api/email/verify-connection', async (req, res) => {
     await transporter.verify();
     return res.json({
       success: true,
-      message: 'Brevo SMTP connection verified successfully! Server is ready to deliver notifications.'
+      message: 'SMTP connection verified successfully! Server is ready to deliver notifications.'
     });
   } catch (err: any) {
     console.error('[SMTP Verify Error]:', err);
@@ -357,16 +409,21 @@ app.post('/api/email/send', async (req, res) => {
       });
     }
 
-    const transporter = createTransporter(smtpConfig ? {
-      host: smtpConfig.smtpHost,
-      port: smtpConfig.smtpPort,
-      user: smtpConfig.smtpUsername,
-      pass: smtpConfig.smtpPassword
+    if (smtpConfig) {
+      activeServerSmtpConfig = smtpConfig;
+    }
+
+    const effectiveSmtp = smtpConfig || activeServerSmtpConfig;
+
+    const transporter = createTransporter(effectiveSmtp ? {
+      host: effectiveSmtp.smtpHost,
+      port: effectiveSmtp.smtpPort,
+      user: effectiveSmtp.smtpUsername,
+      pass: effectiveSmtp.smtpPassword
     } : undefined);
 
-    const senderName = smtpConfig?.senderName || 'İTÜ OBS Quota Alert System';
-    // In Brevo, from address should be valid. We use senderAddress or fallback to the authenticated Brevo login
-    const senderAddress = smtpConfig?.senderAddress || BREVO_SMTP_DEFAULTS.user;
+    const senderName = effectiveSmtp?.senderName || 'İTÜ OBS Quota Alert System';
+    const senderAddress = effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user;
 
     const mailOptions = {
       from: `"${senderName}" <${senderAddress}>`,
@@ -377,12 +434,12 @@ app.post('/api/email/send', async (req, res) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[SMTP Mailer] Email successfully delivered to ${to}. MessageId: ${info.messageId}`);
+    console.log(`[SMTP Mailer] Email successfully delivered to ${to} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}. MessageId: ${info.messageId}`);
     return res.json({
       success: true,
       messageId: info.messageId,
       response: info.response,
-      message: `Email successfully delivered to ${to} via ${smtpConfig?.smtpHost || BREVO_SMTP_DEFAULTS.host}`
+      message: `Email successfully delivered to ${to} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}`
     });
   } catch (err: any) {
     console.error('[SMTP Mailer Error]:', err);
@@ -392,6 +449,355 @@ app.post('/api/email/send', async (req, res) => {
       error: err.toString()
     });
   }
+});
+
+// ==========================================
+// Authentication & 6-Digit Email Verification
+// ==========================================
+
+interface ServerUser {
+  id: string;
+  name: string;
+  email: string;
+  password?: string;
+  isVerified: boolean;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+// In-memory user database
+const serverUsers = new Map<string, ServerUser>();
+
+// Verification code store: email -> { code, name, expiresAt, attempts }
+interface VerificationRecord {
+  code: string;
+  name: string;
+  expiresAt: number;
+  attempts: number;
+}
+const verificationCodes = new Map<string, VerificationRecord>();
+
+// Endpoint: Send 6-digit verification code via configured SMTP relay
+// Uses cryptographically secure pseudorandom number generator (CSPRNG) algorithm
+app.post('/api/auth/send-verification', async (req, res) => {
+  try {
+    const { email, name, smtpConfig } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+
+    if (smtpConfig) {
+      activeServerSmtpConfig = smtpConfig;
+    }
+
+    const effectiveSmtp = smtpConfig || activeServerSmtpConfig;
+
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lütfen geçerli bir e-posta adresi giriniz / Please provide a valid email address.'
+      });
+    }
+
+    // Check if user already exists
+    if (serverUsers.has(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bu e-posta adresiyle kayıtlı bir hesap zaten var. Lütfen giriş yapınız / An account with this email already exists.'
+      });
+    }
+
+    // Modern cryptographically secure 6-digit OTP generation using Node CSPRNG (crypto.randomInt)
+    // Produces unbiased uniform random integer in [100000, 999999]
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    verificationCodes.set(normalizedEmail, {
+      code,
+      name: (name || '').trim(),
+      expiresAt,
+      attempts: 0
+    });
+
+    const studentName = (name || '').trim() || 'Öğrenci / Student';
+
+    const subject = `İTÜ OBS Quota Tracker - Doğrulama Kodunuz / Verification Code: ${code}`;
+    const body = `🔒 HESAP DOĞRULAMA KODU / ACCOUNT VERIFICATION CODE
+
+Merhaba ${studentName},
+
+İTÜ OBS Kontenjan Takip Sistemi hesabı oluşturma talebiniz için 6 haneli doğrulama kodunuz:
+
+==================================================
+              👉   ${code}   👈
+==================================================
+
+Bu kod 10 dakika boyunca geçerlidir. Lütfen bu kodu güvenliğiniz için kimseyle paylaşmayınız.
+
+------------------------------------------------------------
+ENGLISH VERSION
+------------------------------------------------------------
+
+🔒 ACCOUNT VERIFICATION CODE
+
+Hello ${studentName},
+
+Your 6-digit verification code to complete your registration for the ITU OBS Quota Tracker is:
+
+==================================================
+              👉   ${code}   👈
+==================================================
+
+This code is valid for 10 minutes. If you did not request this code, you can safely disregard this email.
+
+—
+İTÜ OBS Quota Alert System (${effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user})`;
+
+    const transporter = createTransporter(effectiveSmtp ? {
+      host: effectiveSmtp.smtpHost,
+      port: effectiveSmtp.smtpPort,
+      user: effectiveSmtp.smtpUsername,
+      pass: effectiveSmtp.smtpPassword
+    } : undefined);
+
+    const senderName = effectiveSmtp?.senderName || 'İTÜ OBS Quota Alert System';
+    const senderAddress = effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user;
+
+    const mailInfo = await transporter.sendMail({
+      from: `"${senderName}" <${senderAddress}>`,
+      to: normalizedEmail,
+      subject,
+      text: body,
+      html: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px 24px; background: #FAF9F5; border-radius: 16px; border: 1px solid #E7E5E4; color: #1C1917;">
+  <div style="text-align: center; margin-bottom: 24px;">
+    <div style="display: inline-block; background: #1C1917; color: #FAF9F5; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 8px;">
+      İTÜ OBS KONTENJAN TAKİP SİSTEMİ
+    </div>
+  </div>
+  
+  <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 12px 0; text-align: center; color: #1C1917;">
+    Hesap Doğrulama Kodu / Verification Code
+  </h2>
+  
+  <p style="font-size: 14px; color: #44403C; line-height: 1.6; margin: 0 0 20px 0; text-align: center;">
+    Merhaba <strong>${studentName}</strong>,<br/>
+    Hesabınızı aktifleştirmek için 6 haneli doğrulama kodunuz:
+  </p>
+  
+  <div style="text-align: center; margin: 24px 0;">
+    <span style="display: inline-block; background: #FFFFFF; border: 2px solid #1C1917; border-radius: 12px; font-size: 32px; font-weight: 800; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 8px; padding: 14px 28px; color: #1C1917; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+      ${code}
+    </span>
+  </div>
+  
+  <p style="font-size: 12px; color: #78716C; text-align: center; margin: 0 0 24px 0;">
+    Bu kod <strong>10 dakika</strong> boyunca geçerlidir. Lütfen kimseyle paylaşmayınız.
+  </p>
+  
+  <hr style="border: none; border-top: 1px solid #E7E5E4; margin: 20px 0;" />
+  
+  <p style="font-size: 12px; color: #78716C; line-height: 1.5; text-align: center; margin: 0 0 8px 0;">
+    <strong>English:</strong> Hello <strong>${studentName}</strong>, your 6-digit verification code to activate your account is <strong>${code}</strong>. Valid for 10 minutes.
+  </p>
+  
+  <div style="font-size: 11px; color: #A8A29E; text-align: center; margin-top: 20px;">
+    ${senderName} &bull; ${senderAddress}
+  </div>
+</div>
+      `
+    });
+
+    console.log(`[Auth Verification] 6-digit code delivered to ${normalizedEmail} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}. MessageId: ${mailInfo.messageId}`);
+    return res.json({
+      success: true,
+      message: `${normalizedEmail} adresine 6 haneli doğrulama kodu başarıyla gönderildi. / Verification code sent to ${normalizedEmail}.`
+    });
+  } catch (err: any) {
+    console.error('[Auth Send-Verification Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: `${req.body?.email || 'E-posta'} adresine doğrulama kodu gönderilemedi: ` + (err.message || 'SMTP hatası.')
+    });
+  }
+});
+
+// Endpoint: Verify 6-digit code
+app.post('/api/auth/verify-code', (req, res) => {
+  const { email, code } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const normalizedCode = (code || '').toString().trim();
+
+  const record = verificationCodes.get(normalizedEmail);
+  if (!record) {
+    return res.status(400).json({
+      success: false,
+      message: 'Doğrulama kodu bulunamadı veya süresi doldu. Lütfen tekrar kod isteyiniz / Verification code not found or expired.'
+    });
+  }
+
+  if (Date.now() > record.expiresAt) {
+    verificationCodes.delete(normalizedEmail);
+    return res.status(400).json({
+      success: false,
+      message: 'Doğrulama kodunun süresi doldu. Lütfen yeni kod isteyiniz / Code expired.'
+    });
+  }
+
+  if (record.code !== normalizedCode) {
+    record.attempts += 1;
+    if (record.attempts >= 5) {
+      verificationCodes.delete(normalizedEmail);
+      return res.status(400).json({
+        success: false,
+        message: 'Çok fazla hatalı kod denemesi yapıldı. Lütfen yeni doğrulama kodu isteyiniz / Too many failed attempts. Please request a new code.'
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: `Geçersiz 6 haneli kod. Kalan deneme hakkı: ${5 - record.attempts} / Invalid 6-digit code. Remaining attempts: ${5 - record.attempts}.`
+    });
+  }
+
+  return res.json({
+    success: true,
+    message: 'Kod başarıyla doğrulandı / Code verified successfully.'
+  });
+});
+
+// Endpoint: Sign Up with verified code
+app.post('/api/auth/signup', (req, res) => {
+  const { name, email, password, code } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const normalizedCode = (code || '').toString().trim();
+
+  if (!name || !normalizedEmail || !password) {
+    return res.status(400).json({
+      success: false,
+      message: 'Eksik bilgi: Ad, e-posta ve şifre zorunludur.'
+    });
+  }
+
+  // Verify code
+  const record = verificationCodes.get(normalizedEmail);
+  if (!record || record.code !== normalizedCode || Date.now() > record.expiresAt) {
+    return res.status(400).json({
+      success: false,
+      message: 'Doğrulama kodu geçersiz veya süresi dolmuş. Lütfen tekrar kod isteyiniz.'
+    });
+  }
+
+  // Remove used verification code
+  verificationCodes.delete(normalizedEmail);
+
+  const newUser: ServerUser = {
+    id: 'user-' + Date.now(),
+    name: name.trim(),
+    email: normalizedEmail,
+    password: password.trim(),
+    isVerified: true,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString()
+  };
+
+  serverUsers.set(normalizedEmail, newUser);
+
+  return res.json({
+    success: true,
+    message: 'Hesabınız başarıyla oluşturuldu! / Account created successfully!',
+    user: {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+      isVerified: true,
+      createdAt: newUser.createdAt,
+      lastLoginAt: newUser.lastLoginAt
+    }
+  });
+});
+
+// Endpoint: Sign In
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+
+  const user = serverUsers.get(normalizedEmail);
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'Bu e-posta adresiyle kayıtlı bir hesap bulunamadı / No account found with this email.'
+    });
+  }
+
+  if (user.password && user.password !== (password || '').trim()) {
+    return res.status(401).json({
+      success: false,
+      message: 'Hatalı şifre / Incorrect password.'
+    });
+  }
+
+  user.lastLoginAt = new Date().toISOString();
+  serverUsers.set(normalizedEmail, user);
+
+  return res.json({
+    success: true,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt
+    }
+  });
+});
+
+// Endpoint: Change Password
+app.post('/api/auth/change-password', (req, res) => {
+  const { email, currentPassword, newPassword } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+
+  const user = serverUsers.get(normalizedEmail);
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'Kullanıcı bulunamadı / User not found.'
+    });
+  }
+
+  if (user.password && user.password !== (currentPassword || '').trim()) {
+    return res.status(401).json({
+      success: false,
+      message: 'Mevcut şifreniz hatalı / Current password is incorrect.'
+    });
+  }
+
+  if (!newPassword || newPassword.length < 4) {
+    return res.status(400).json({
+      success: false,
+      message: 'Yeni şifre en az 4 karakter olmalıdır / New password must be at least 4 characters.'
+    });
+  }
+
+  user.password = newPassword.trim();
+  serverUsers.set(normalizedEmail, user);
+
+  return res.json({
+    success: true,
+    message: 'Şifreniz başarıyla değiştirildi / Password changed successfully.'
+  });
+});
+
+// Endpoint: Delete User
+app.delete('/api/auth/delete-user', (req, res) => {
+  const { email } = req.body || req.query || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+
+  serverUsers.delete(normalizedEmail);
+  verificationCodes.delete(normalizedEmail);
+
+  return res.json({
+    success: true,
+    message: `Kullanıcı ${normalizedEmail} silindi / User deleted successfully.`
+  });
 });
 
 // Vite Middleware Setup

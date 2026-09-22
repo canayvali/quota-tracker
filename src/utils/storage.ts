@@ -1,4 +1,4 @@
-import { ClassMonitor, EmailSenderConfig, GlobalSettings, UserAccount } from '../types';
+import { AppLanguage, ClassMonitor, EmailSenderConfig, GlobalSettings, UserAccount } from '../types';
 
 const STORAGE_KEY_MONITORS = 'crn_quota_monitors_v4';
 const STORAGE_KEY_SETTINGS = 'crn_quota_settings_v4';
@@ -17,7 +17,7 @@ export const INITIAL_SETTINGS: GlobalSettings = {
   autoRefreshActive: true,
   autoRefreshInterval: 45, // seconds
   soundAlert: true,
-  defaultEmail: 'ahmetcanayvali@gmail.com',
+  defaultEmail: 'emailadress@gmail.com',
   defaultQuotaUrl: DEFAULT_QUOTA_SOURCE_URL,
   adminPassword: ADMIN_PASSWORD
 };
@@ -29,22 +29,13 @@ export const INITIAL_EMAIL_CONFIG: EmailSenderConfig = {
   smtpHost: 'smtp-relay.brevo.com',
   smtpPort: 587,
   smtpUsername: 'ba7eed001@smtp-brevo.com',
-  smtpPassword: 'xsmtpsib-d38db62788b3cffbc0ec7eb1d05453633fc71731870670d9fceed4dcea692cf1-WY7mckdl4MC0VvJ8',
+  smtpPassword: 'bskD981CTehLLJb',
   isReady: true,
   notes: 'Brevo SMTP Relay configured for automated student quota dispatch.'
 };
 
-// Initial sample student account
-export const INITIAL_USERS: UserAccount[] = [
-  {
-    id: 'user-itu-1',
-    name: 'Ahmet Can Ayvalı',
-    email: 'ahmetcanayvali@gmail.com',
-    password: 'password123',
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString()
-  }
-];
+// No pre-existing users - all users sign up and verify with their own email
+export const INITIAL_USERS: UserAccount[] = [];
 
 export function loadUsers(): UserAccount[] {
   try {
@@ -53,7 +44,13 @@ export function loadUsers(): UserAccount[] {
       saveUsers(INITIAL_USERS);
       return INITIAL_USERS;
     }
-    return JSON.parse(raw);
+    const users: UserAccount[] = JSON.parse(raw);
+    // Ensure ahmetcanayvali@gmail.com is purged as requested
+    const filtered = users.filter((u) => u.email && u.email.toLowerCase() !== 'ahmetcanayvali@gmail.com');
+    if (filtered.length !== users.length) {
+      saveUsers(filtered);
+    }
+    return filtered;
   } catch {
     return INITIAL_USERS;
   }
@@ -61,7 +58,8 @@ export function loadUsers(): UserAccount[] {
 
 export function saveUsers(users: UserAccount[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+    const filtered = users.filter((u) => u.email && u.email.toLowerCase() !== 'ahmetcanayvali@gmail.com');
+    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(filtered));
   } catch {
     // ignore
   }
@@ -71,9 +69,66 @@ export function loadCurrentUser(): UserAccount | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CURRENT_USER);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const user: UserAccount = JSON.parse(raw);
+    if (user.email && user.email.toLowerCase() === 'ahmetcanayvali@gmail.com') {
+      clearCurrentUser();
+      return null;
+    }
+    return user;
   } catch {
     return null;
+  }
+}
+
+export function updateUserPassword(email: string, newPassword: string): boolean {
+  try {
+    const users = loadUsers();
+    const idx = users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (idx === -1) return false;
+    users[idx].password = newPassword;
+    saveUsers(users);
+
+    const curr = loadCurrentUser();
+    if (curr && curr.email.toLowerCase() === email.toLowerCase()) {
+      curr.password = newPassword;
+      saveCurrentUser(curr);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function deleteUserAccount(email: string): boolean {
+  try {
+    const users = loadUsers().filter((u) => u.email.toLowerCase() !== email.toLowerCase());
+    saveUsers(users);
+    const curr = loadCurrentUser();
+    if (curr && curr.email.toLowerCase() === email.toLowerCase()) {
+      clearCurrentUser();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function updateUserLanguage(email: string, language: AppLanguage): boolean {
+  try {
+    const users = loadUsers();
+    const idx = users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (idx !== -1) {
+      users[idx].preferredLanguage = language;
+      saveUsers(users);
+    }
+    const curr = loadCurrentUser();
+    if (curr && curr.email.toLowerCase() === email.toLowerCase()) {
+      curr.preferredLanguage = language;
+      saveCurrentUser(curr);
+    }
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -147,8 +202,13 @@ export function loadEmailConfig(): EmailSenderConfig {
       return INITIAL_EMAIL_CONFIG;
     }
     const parsed = JSON.parse(raw);
-    if (parsed.smtpHost === 'smtp.itu.edu.tr' || !parsed.smtpPassword || parsed.smtpPassword === '••••••••••••••••') {
-      const updated = { ...INITIAL_EMAIL_CONFIG, ...parsed, ...INITIAL_EMAIL_CONFIG };
+    if (
+      parsed.smtpHost === 'smtp.itu.edu.tr' ||
+      !parsed.smtpPassword ||
+      parsed.smtpPassword === '••••••••••••••••' ||
+      parsed.smtpPassword.startsWith('xsmtpsib-')
+    ) {
+      const updated = { ...INITIAL_EMAIL_CONFIG, ...parsed, smtpPassword: INITIAL_EMAIL_CONFIG.smtpPassword };
       saveEmailConfig(updated);
       return updated;
     }

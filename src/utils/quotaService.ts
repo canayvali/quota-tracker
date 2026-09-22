@@ -1,4 +1,4 @@
-import { ClassMonitor, EmailSenderConfig, QuotaHistoryEvent } from '../types';
+import { AppLanguage, ClassMonitor, EmailSenderConfig, QuotaHistoryEvent } from '../types';
 import { soundEffects } from './audio';
 
 export interface CheckResult {
@@ -10,23 +10,59 @@ export interface CheckResult {
 
 export type QuotaEventType = 'capacity_increase' | 'seat_dropped' | 'seat_claimed' | 'other';
 
+/**
+ * Generates email subject and body for quota notifications.
+ * Based on user preference, the email is dispatched in either Turkish ('tr') or English ('en').
+ * Defaults to Turkish if not specified or changed.
+ */
 export function generateEmailHtml(
   monitor: ClassMonitor,
   oldSeats: number,
   newSeats: number,
   senderConfig: EmailSenderConfig,
   eventType: 'capacity_increase' | 'seat_dropped' = 'seat_dropped',
-  capacityChange?: { oldCapacity: number; newCapacity: number }
+  capacityChange?: { oldCapacity: number; newCapacity: number },
+  language: AppLanguage = 'tr'
 ): { subject: string; body: string } {
   const changeDiff = newSeats - oldSeats;
   const now = new Date();
   const dateStrTR = now.toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'medium' });
   const dateStrEN = now.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'medium' });
 
+  const isEnglish = language === 'en';
+
   // 1. Quota is increased by department / faculty
   if (eventType === 'capacity_increase') {
-    const subject = `Kontenjan arttırıldı! - CRN ${monitor.crn} (${monitor.courseCode})`;
+    if (isEnglish) {
+      const subject = `Quota Increased! - CRN ${monitor.crn} (${monitor.courseCode})`;
+      const body = `
+🚨 QUOTA INCREASED!
 
+Hello,
+
+The department or faculty has increased the quota for your tracked course:
+
+• Course Code: ${monitor.courseCode}
+• Course Title: ${monitor.courseTitle}
+• CRN: ${monitor.crn}
+• Instructor: ${monitor.instructor}
+• Quota Change: ${capacityChange ? `${capacityChange.oldCapacity} → ${capacityChange.newCapacity} total quota` : `Available seats: ${oldSeats} → ${newSeats}`}
+• Available Seats Right Now: ${newSeats}
+• Enrolled / Total: ${monitor.enrolled}/${capacityChange ? capacityChange.newCapacity : monitor.totalCapacity}
+• Notification Time: ${dateStrEN}
+• OBS Course Schedule: ${monitor.targetUrl}
+
+⚡ ACTION RECOMMENDED: Log into the ITU Student Information System (OBS) immediately to finalize your course registration before seats fill up!
+
+—
+ITU OBS Quota Alert System (${senderConfig.senderAddress})
+This notification was automatically sent for the student registered at ${monitor.notificationEmail}.
+      `.trim();
+      return { subject, body };
+    }
+
+    // Default Turkish
+    const subject = `Kontenjan arttırıldı! - CRN ${monitor.crn} (${monitor.courseCode})`;
     const body = `
 🚨 KONTENJAN ARTTIRILDI!
 
@@ -46,30 +82,8 @@ Takip ettiğiniz derste bölüm/fakülte tarafından kontenjan artırımı yapı
 
 ⚡ ÖNEMLİ: Kontenjan tükenmeden hemen İTÜ Öğrenci Bilgi Sistemi'ne (OBS) giriş yaparak ders kaydınızı tamamlayınız!
 
-------------------------------------------------------------
-ENGLISH VERSION
-------------------------------------------------------------
-
-🚨 QUOTA INCREASED!
-
-Hello,
-
-The department/faculty has increased the quota for your tracked course:
-
-• Course Code: ${monitor.courseCode}
-• Course Title: ${monitor.courseTitle}
-• CRN: ${monitor.crn}
-• Instructor: ${monitor.instructor}
-• Quota Change: ${capacityChange ? `${capacityChange.oldCapacity} → ${capacityChange.newCapacity} total capacity` : `Available seats: ${oldSeats} → ${newSeats}`}
-• Available Seats: ${newSeats}
-• Enrolled / Total: ${monitor.enrolled}/${capacityChange ? capacityChange.newCapacity : monitor.totalCapacity}
-• Timestamp: ${dateStrEN}
-• OBS Schedule Source: ${monitor.targetUrl}
-
-⚡ ACTION RECOMMENDED: Log into the ITU Student Information System (OBS) immediately to register before seats fill up!
-
 —
-İTÜ OBS Quota Alert System (${senderConfig.senderAddress})
+İTÜ OBS Kontenjan Uyarı Sistemi (${senderConfig.senderAddress})
 Bu bildirim ${monitor.notificationEmail} adresine kayıtlı öğrenci için otomatik olarak gönderilmiştir.
     `.trim();
 
@@ -78,8 +92,37 @@ Bu bildirim ${monitor.notificationEmail} adresine kayıtlı öğrenci için otom
 
   // 2. Somebody dropped the class (A student dropped)
   const diffDisplay = changeDiff > 0 ? `+${changeDiff}` : `${changeDiff}`;
-  const subject = `Kontenjan açıldı - Biri dersi bıraktı: CRN ${monitor.crn} (${monitor.courseCode})`;
 
+  if (isEnglish) {
+    const subject = `Seat Opened - Student Dropped: CRN ${monitor.crn} (${monitor.courseCode})`;
+    const body = `
+🔔 SEAT OPENED - SOMEONE DROPPED THE CLASS
+
+Hello,
+
+A student has dropped your tracked class and an open seat is now available:
+
+• Course Code: ${monitor.courseCode}
+• Course Title: ${monitor.courseTitle}
+• CRN: ${monitor.crn}
+• Instructor: ${monitor.instructor}
+• Available Seats: ${oldSeats} → ${newSeats} (${diffDisplay} open seat${Math.abs(changeDiff) === 1 ? '' : 's'})
+• Enrolled / Total: ${monitor.enrolled}/${monitor.totalCapacity}
+• Notification Time: ${dateStrEN}
+• OBS Course Schedule: ${monitor.targetUrl}
+
+⚡ ACTION RECOMMENDED: Log into your ITU Student Information System (OBS) immediately to register before this seat is taken!
+
+—
+ITU OBS Quota Alert System (${senderConfig.senderAddress})
+This notification was automatically sent for the student registered at ${monitor.notificationEmail}.
+    `.trim();
+
+    return { subject, body };
+  }
+
+  // Default Turkish
+  const subject = `Kontenjan açıldı - Biri dersi bıraktı: CRN ${monitor.crn} (${monitor.courseCode})`;
   const body = `
 🔔 KONTENJAN AÇILDI - BİRİ DERSİ BIRAKTI
 
@@ -98,29 +141,8 @@ Takip ettiğiniz derste bir öğrencinin dersi bırakması sonucu boş kontenjan
 
 ⚡ ÖNEMLİ: Boşalan bu kontenjan başka bir öğrenci tarafından alınmadan önce hemen İTÜ OBS sistemine giriş yapınız!
 
-------------------------------------------------------------
-ENGLISH VERSION
-------------------------------------------------------------
-
-🔔 SEAT OPENED - SOMEONE DROPPED THE CLASS
-
-Hello,
-
-A student has dropped your tracked class and an open seat is now available:
-
-• Course Code: ${monitor.courseCode}
-• Course Title: ${monitor.courseTitle}
-• CRN: ${monitor.crn}
-• Instructor: ${monitor.instructor}
-• Available Seats: ${oldSeats} → ${newSeats} (${diffDisplay} open seat)
-• Enrolled / Total: ${monitor.enrolled}/${monitor.totalCapacity}
-• Timestamp: ${dateStrEN}
-• OBS Schedule Source: ${monitor.targetUrl}
-
-⚡ ACTION RECOMMENDED: Log into your ITU Student Information System (OBS) immediately to register before this seat is taken!
-
 —
-İTÜ OBS Quota Alert System (${senderConfig.senderAddress})
+İTÜ OBS Kontenjan Uyarı Sistemi (${senderConfig.senderAddress})
 Bu bildirim ${monitor.notificationEmail} adresine kayıtlı öğrenci için otomatik olarak gönderilmiştir.
   `.trim();
 
@@ -135,7 +157,8 @@ export function processQuotaChange(
   enableSound: boolean,
   eventTypeOverride?: 'capacity_increase' | 'seat_dropped' | 'seat_claimed',
   forcedNote?: string,
-  capacityChange?: { oldCapacity: number; newCapacity: number }
+  capacityChange?: { oldCapacity: number; newCapacity: number },
+  language: AppLanguage = 'tr'
 ): CheckResult {
   const oldAvailable = monitor.availableSeats;
   const hasChanged = oldAvailable !== newAvailable || monitor.enrolled !== newEnrolled;
@@ -167,7 +190,8 @@ export function processQuotaChange(
       newAvailable,
       senderConfig,
       eventType,
-      capacityChange
+      capacityChange,
+      language
     );
 
     const changeType: 'increased' | 'decreased' | 'unchanged' =
@@ -178,10 +202,10 @@ export function processQuotaChange(
     const eventNote =
       forcedNote ||
       (isCapIncrease
-        ? 'Kontenjan arttırıldı!'
+        ? (language === 'en' ? 'Quota increased!' : 'Kontenjan arttırıldı!')
         : isSeatDropped
-        ? 'Kontenjan açıldı - Biri dersi bıraktı'
-        : 'Kontenjan azaldı / doldu (E-posta gönderilmez)');
+        ? (language === 'en' ? 'Seat opened - Student dropped' : 'Kontenjan açıldı - Biri dersi bıraktı')
+        : (language === 'en' ? 'Quota decreased / full (No email dispatched)' : 'Kontenjan azaldı / doldu (E-posta gönderilmez)'));
 
     historyEvent = {
       id: 'evt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -227,7 +251,8 @@ export function processQuotaChange(
 export function simulateDropSeat(
   monitor: ClassMonitor,
   senderConfig: EmailSenderConfig,
-  sound: boolean
+  sound: boolean,
+  language: AppLanguage = 'tr'
 ): CheckResult {
   // A student dropped: available seats +1
   const newAvailable = Math.min(monitor.totalCapacity, monitor.availableSeats + 1);
@@ -239,14 +264,17 @@ export function simulateDropSeat(
     senderConfig,
     sound,
     'seat_dropped',
-    'Kontenjan açıldı - Biri dersi bıraktı'
+    language === 'en' ? 'Seat opened - Student dropped' : 'Kontenjan açıldı - Biri dersi bıraktı',
+    undefined,
+    language
   );
 }
 
 export function simulateClaimSeat(
   monitor: ClassMonitor,
   senderConfig: EmailSenderConfig,
-  sound: boolean
+  sound: boolean,
+  language: AppLanguage = 'tr'
 ): CheckResult {
   // A seat was claimed / filled: available seats -1. NO EMAIL SENT!
   const newAvailable = Math.max(0, monitor.availableSeats - 1);
@@ -258,7 +286,9 @@ export function simulateClaimSeat(
     senderConfig,
     sound,
     'seat_claimed',
-    'Ders alındı: kontenjan azaldı (E-posta gönderilmez)'
+    language === 'en' ? 'Seat taken: quota decreased (No email sent)' : 'Ders alındı: kontenjan azaldı (E-posta gönderilmez)',
+    undefined,
+    language
   );
 }
 
@@ -266,7 +296,8 @@ export function simulateCapacityIncrease(
   monitor: ClassMonitor,
   additionalQuota: number,
   senderConfig: EmailSenderConfig,
-  sound: boolean
+  sound: boolean,
+  language: AppLanguage = 'tr'
 ): CheckResult {
   const newCapacity = monitor.totalCapacity + additionalQuota;
   const newAvailable = monitor.availableSeats + additionalQuota;
@@ -281,7 +312,9 @@ export function simulateCapacityIncrease(
     senderConfig,
     sound,
     'capacity_increase',
-    `Kontenjan arttırıldı! (+${additionalQuota} yeni kontenjan)`,
-    { oldCapacity: monitor.totalCapacity, newCapacity }
+    language === 'en' ? `Quota increased! (+${additionalQuota} new quota)` : `Kontenjan arttırıldı! (+${additionalQuota} yeni kontenjan)`,
+    { oldCapacity: monitor.totalCapacity, newCapacity },
+    language
   );
 }
+

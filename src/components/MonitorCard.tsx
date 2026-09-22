@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CheckCircle2, ChevronDown, Clock, History, Mail, Pause, Play, RefreshCw, Trash2, User } from 'lucide-react';
-import { ClassMonitor } from '../types';
+import { CheckCircle2, ChevronDown, Clock, History, Pause, Play, RefreshCw, Trash2, User } from 'lucide-react';
+import { AppLanguage, ClassMonitor } from '../types';
+import { TRANSLATIONS } from '../utils/translations';
 
 interface MonitorCardProps {
   monitor: ClassMonitor;
@@ -12,6 +13,7 @@ interface MonitorCardProps {
   onDelete: (id: string) => void;
   onViewHistory: (monitor: ClassMonitor) => void;
   isChecking: boolean;
+  language?: AppLanguage;
 }
 
 export const MonitorCard: React.FC<MonitorCardProps> = ({
@@ -23,8 +25,10 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
   onTogglePause,
   onDelete,
   onViewHistory,
-  isChecking
+  isChecking,
+  language = 'tr'
 }) => {
+  const t = TRANSLATIONS[language];
   const [showSimulateMenu, setShowSimulateMenu] = useState(false);
 
   const isAvailable = monitor.availableSeats > 0;
@@ -37,14 +41,14 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
     try {
       const diffMs = Date.now() - new Date(isoString).getTime();
       const diffSec = Math.floor(diffMs / 1000);
-      if (diffSec < 10) return 'Just now';
-      if (diffSec < 60) return `${diffSec}s ago`;
+      if (diffSec < 10) return t.justNow;
+      if (diffSec < 60) return `${diffSec}s ${language === 'tr' ? 'önce' : 'ago'}`;
       const diffMin = Math.floor(diffSec / 60);
-      if (diffMin < 60) return `${diffMin}m ago`;
+      if (diffMin < 60) return `${diffMin}m ${language === 'tr' ? 'önce' : 'ago'}`;
       const diffHours = Math.floor(diffMin / 60);
-      return `${diffHours}h ago`;
+      return `${diffHours}h ${language === 'tr' ? 'önce' : 'ago'}`;
     } catch {
-      return 'Recently';
+      return language === 'tr' ? 'Az önce' : 'Recently';
     }
   };
 
@@ -62,10 +66,10 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
         <div className="bg-emerald-500 text-white px-4 py-1 text-[11px] font-bold tracking-wide rounded-t-2xl flex items-center justify-between">
           <span className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-white animate-ping" />
-            SEAT AVAILABLE RIGHT NOW!
+            {t.statusSeatOpen}
           </span>
           <span className="font-mono text-emerald-100 uppercase">
-            {monitor.availableSeats} {monitor.availableSeats === 1 ? 'Seat Open' : 'Seats Open'}
+            {monitor.availableSeats} {language === 'tr' ? 'Boş Kontenjan' : (monitor.availableSeats === 1 ? 'Seat Open' : 'Seats Open')}
           </span>
         </div>
       )}
@@ -88,7 +92,7 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                     : 'bg-stone-100 text-stone-600'
                 }`}
               >
-                {monitor.status === 'active' ? 'Active' : 'Paused'}
+                {monitor.status === 'active' ? (language === 'tr' ? 'Aktif' : 'Active') : (language === 'tr' ? 'Durduruldu' : 'Paused')}
               </span>
             </div>
             <h3 className="text-sm font-semibold text-stone-800 line-clamp-1">
@@ -106,14 +110,14 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
           <div className="flex items-center gap-1">
             <button
               onClick={() => onTogglePause(monitor.id)}
-              title={monitor.status === 'active' ? 'Pause monitoring' : 'Resume monitoring'}
+              title={monitor.status === 'active' ? t.btnPause : t.btnResume}
               className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
             >
               {monitor.status === 'active' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 text-emerald-600" />}
             </button>
             <button
               onClick={() => onDelete(monitor.id)}
-              title="Remove this class monitor"
+              title={t.btnDelete}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
             >
               <Trash2 className="h-4 w-4" />
@@ -130,121 +134,98 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
           }`}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-stone-600">Current Quota Status</span>
+            <span className="text-xs font-medium text-stone-600">
+              {language === 'tr' ? 'Güncel Kontenjan Durumu' : 'Current Quota Status'}
+            </span>
             {isAvailable ? (
               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                {monitor.availableSeats} Open Seat{monitor.availableSeats > 1 ? 's' : ''}
+                {monitor.availableSeats} {language === 'tr' ? 'Boş Yer' : (monitor.availableSeats > 1 ? 'Open Seats' : 'Open Seat')}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-stone-600 bg-stone-200/80 px-2 py-0.5 rounded-full">
-                Full ({monitor.enrolled}/{monitor.totalCapacity})
+                {t.filterFull}
               </span>
             )}
           </div>
 
-          {/* Quota Numbers Grid */}
-          <div className="grid grid-cols-3 gap-2 text-center py-1">
-            <div className="bg-white p-2 rounded-lg border border-stone-200/60 shadow-2xs">
-              <div className="text-[10px] text-stone-500 font-medium">Available</div>
-              <div
-                className={`text-lg font-bold font-mono ${
-                  isAvailable ? 'text-emerald-600 animate-bounce' : 'text-stone-800'
+          {/* Progress Bar */}
+          <div className="w-full h-2.5 bg-stone-200 rounded-full overflow-hidden mb-2">
+            <div
+              className={`h-full transition-all duration-500 rounded-full ${
+                isAvailable ? 'bg-emerald-500' : 'bg-stone-500'
+              }`}
+              style={{ width: `${percentFilled}%` }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-stone-600">
+            <div>
+              <span className="text-stone-400">{t.seatsEnrolled}: </span>
+              <span className="font-bold text-stone-800">
+                {monitor.enrolled} / {monitor.totalCapacity}
+              </span>
+            </div>
+            <div>
+              <span className="text-stone-400">{t.seatsRemaining}: </span>
+              <span
+                className={`font-mono font-bold ${
+                  isAvailable ? 'text-emerald-700' : 'text-stone-500'
                 }`}
               >
                 {monitor.availableSeats}
-              </div>
-            </div>
-            <div className="bg-white p-2 rounded-lg border border-stone-200/60 shadow-2xs">
-              <div className="text-[10px] text-stone-500 font-medium">Enrolled</div>
-              <div className="text-lg font-bold font-mono text-stone-800">
-                {monitor.enrolled}
-              </div>
-            </div>
-            <div className="bg-white p-2 rounded-lg border border-stone-200/60 shadow-2xs">
-              <div className="text-[10px] text-stone-500 font-medium">Capacity</div>
-              <div className="text-lg font-bold font-mono text-stone-800">
-                {monitor.totalCapacity}
-              </div>
+              </span>
             </div>
           </div>
+        </div>
 
-          {/* Progress Bar */}
-          <div className="mt-2.5">
-            <div className="flex justify-between text-[10px] text-stone-500 mb-1">
-              <span>Enrollment Fill</span>
-              <span>{percentFilled}% Filled</span>
-            </div>
-            <div className="h-2 w-full rounded-full bg-stone-200 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-500 ${
-                  isAvailable ? 'bg-emerald-500' : 'bg-stone-700'
-                }`}
-                style={{ width: `${percentFilled}%` }}
+        {/* Footer: Last Check Time & Actions */}
+        <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs">
+          <div className="flex items-center gap-1 text-stone-400 text-[11px]">
+            <Clock className="h-3 w-3" />
+            <span>{t.lastChecked}: {getRelativeTime(monitor.lastChecked)}</span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => onCheckNow(monitor.id)}
+              disabled={isChecking || monitor.status === 'paused'}
+              title={t.btnCheckNow}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 active:scale-95 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`h-3 w-3 ${isChecking ? 'animate-spin text-stone-900' : ''}`}
               />
-            </div>
+              <span className="hidden sm:inline">
+                {isChecking ? (language === 'tr' ? 'Kontrol ediliyor...' : 'Checking...') : t.btnCheckNow}
+              </span>
+            </button>
+
+            <button
+              onClick={() => onViewHistory(monitor)}
+              title={t.btnHistory}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 active:scale-95 rounded-lg transition-all cursor-pointer"
+            >
+              <History className="h-3 w-3" />
+              <span className="hidden sm:inline">{t.btnHistory}</span>
+            </button>
           </div>
         </div>
 
-        {/* Target Email & Check Timestamp */}
-        <div className="space-y-1.5 text-xs text-stone-600 mb-4 pb-3 border-b border-stone-100">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-stone-500">
-              <Mail className="h-3.5 w-3.5 text-stone-400" />
-              <span>Email:</span>
-            </span>
-            <span className="font-mono text-[11px] text-stone-800 font-medium max-w-[180px] truncate">
-              {monitor.notificationEmail}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 text-stone-500">
-              <Clock className="h-3.5 w-3.5 text-stone-400" />
-              <span>Checked:</span>
-            </span>
-            <span className="text-stone-700 font-medium">
-              {getRelativeTime(monitor.lastChecked)}
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-stone-500">Bildirim:</span>
-            <span className="text-[11px] text-stone-700 font-medium">
-              Kontenjan Açılınca / Artınca
-            </span>
-          </div>
-        </div>
-
-        {/* Action Controls & Simulator */}
-        <div className="flex items-center justify-between gap-2">
-          {/* Check Now */}
-          <button
-            onClick={() => onCheckNow(monitor.id)}
-            disabled={isChecking}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 active:scale-95 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isChecking ? 'animate-spin' : ''}`} />
-            <span>{isChecking ? 'Kontrol Ediliyor...' : 'Şimdi Kontrol Et'}</span>
-          </button>
-
-          {/* View Audit & Email Log */}
-          <button
-            onClick={() => onViewHistory(monitor)}
-            title="E-posta bildirim geçmişini ve olay kaydını görüntüle"
-            className="p-2 text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
-          >
-            <History className="h-4 w-4" />
-          </button>
+        {/* Live Simulation Trigger (Biri dersi bıraktı / Kontenjan arttırıldı) */}
+        <div className="mt-3 pt-2.5 border-t border-dashed border-stone-200 flex items-center justify-between">
+          <span className="text-[11px] text-stone-400 font-medium">
+            {language === 'tr' ? 'Bildirim Testi:' : 'Alert Testing:'}
+          </span>
 
           {/* Simulate Changes Dropdown */}
           <div className="relative">
             <button
               onClick={() => setShowSimulateMenu(!showSimulateMenu)}
-              title="E-posta bildirimini test etmek için olay simüle et"
+              title={language === 'tr' ? 'E-posta bildirimini test etmek için olay simüle et' : 'Simulate an event to test email dispatch'}
               className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-stone-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
             >
-              <span>Test Et</span>
+              <span>{language === 'tr' ? 'Test Et' : 'Simulate'}</span>
               <ChevronDown className="h-3 w-3" />
             </button>
 
@@ -254,9 +235,9 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                   className="fixed inset-0 z-20"
                   onClick={() => setShowSimulateMenu(false)}
                 />
-                <div className="absolute right-0 bottom-full mb-1.5 w-56 rounded-xl bg-white border border-stone-200 shadow-xl py-1.5 z-30 text-xs">
+                <div className="absolute right-0 bottom-full mb-1.5 w-60 rounded-xl bg-white border border-stone-200 shadow-xl py-1.5 z-30 text-xs">
                   <div className="px-3 py-1 text-[10px] uppercase font-bold text-stone-400 tracking-wider">
-                    Olay Simülasyonu
+                    {language === 'tr' ? 'Olay Simülasyonu' : 'Event Simulation'}
                   </div>
                   <button
                     onClick={() => {
@@ -266,8 +247,12 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                     className="w-full text-left px-3 py-2 text-stone-700 hover:bg-emerald-50 hover:text-emerald-900 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-semibold text-emerald-800">Biri Dersi Bıraktı</div>
-                      <div className="text-[10px] text-stone-500">"Kontenjan açıldı..." e-postası</div>
+                      <div className="font-semibold text-emerald-800">
+                        {language === 'tr' ? 'Biri Dersi Bıraktı' : 'Seat Dropped'}
+                      </div>
+                      <div className="text-[10px] text-stone-500">
+                        {language === 'tr' ? '"Kontenjan açıldı..." e-postası' : 'Dispatches seat drop alert'}
+                      </div>
                     </div>
                     <span className="font-mono text-emerald-600 font-bold ml-2">+1</span>
                   </button>
@@ -279,8 +264,12 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                     className="w-full text-left px-3 py-2 text-stone-700 hover:bg-amber-50 hover:text-amber-900 flex items-center justify-between border-t border-stone-100"
                   >
                     <div>
-                      <div className="font-semibold text-amber-800">Kontenjan Arttırıldı</div>
-                      <div className="text-[10px] text-stone-500">"Kontenjan arttırıldı!" e-postası</div>
+                      <div className="font-semibold text-amber-800">
+                        {language === 'tr' ? 'Kontenjan Arttırıldı' : 'Capacity Increased'}
+                      </div>
+                      <div className="text-[10px] text-stone-500">
+                        {language === 'tr' ? '"Kontenjan arttırıldı!" e-postası' : 'Dispatches capacity alert'}
+                      </div>
                     </div>
                     <span className="font-mono text-amber-700 font-bold ml-2">+5</span>
                   </button>
@@ -292,8 +281,12 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                     className="w-full text-left px-3 py-2 text-stone-700 hover:bg-stone-50 hover:text-stone-900 flex items-center justify-between border-t border-stone-100 opacity-80"
                   >
                     <div>
-                      <div className="font-semibold text-stone-700">Ders Alındı (Kontenjan Düştü)</div>
-                      <div className="text-[10px] text-stone-400">E-posta gönderilmez</div>
+                      <div className="font-semibold text-stone-700">
+                        {language === 'tr' ? 'Ders Alındı (Kontenjan Düştü)' : 'Seat Taken (Decrease)'}
+                      </div>
+                      <div className="text-[10px] text-stone-400">
+                        {language === 'tr' ? 'E-posta gönderilmez' : 'No email sent'}
+                      </div>
                     </div>
                     <span className="font-mono text-stone-500 font-bold ml-2">-1</span>
                   </button>
