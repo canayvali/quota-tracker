@@ -13,7 +13,7 @@ import {
   Zap
 } from 'lucide-react';
 
-import { AppLanguage, ClassMonitor, EmailSenderConfig, GlobalSettings, ItuCourse, UserAccount } from './types';
+import { AppLanguage, AppTheme, ClassMonitor, EmailSenderConfig, GlobalSettings, ItuCourse, UserAccount } from './types';
 import {
   checkAdminAuth,
   clearCurrentUser,
@@ -21,12 +21,15 @@ import {
   loadEmailConfig,
   loadMonitors,
   loadSettings,
+  loadTheme,
   saveCurrentUser,
   saveEmailConfig,
   saveMonitors,
   saveSettings,
+  saveTheme,
   setAdminAuth,
-  updateUserLanguage
+  updateUserLanguage,
+  updateUserTheme
 } from './utils/storage';
 import {
   generateEmailHtml,
@@ -96,6 +99,40 @@ export default function App() {
     }
   };
 
+  // Theme state: light or dark
+  const [theme, setTheme] = useState<AppTheme>(() => {
+    const user = loadCurrentUser();
+    if (user && user.theme) {
+      return user.theme;
+    }
+    return loadTheme();
+  });
+
+  // Apply dark mode class to html element
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+    }
+    saveTheme(theme);
+  }, [theme]);
+
+  const handleThemeChange = (newTheme: AppTheme) => {
+    setTheme(newTheme);
+    if (currentUser) {
+      const updatedUser: UserAccount = {
+        ...currentUser,
+        theme: newTheme
+      };
+      setCurrentUser(updatedUser);
+      saveCurrentUser(updatedUser);
+      updateUserTheme(currentUser.email, newTheme);
+    }
+  };
+
   // Scroll state for header collapse
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
 
@@ -113,7 +150,6 @@ export default function App() {
   // UI state
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'open' | 'full' | 'paused'>('all');
-  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
   const [checkingIds, setCheckingIds] = useState<Record<string, boolean>>({});
 
   // Modals
@@ -370,21 +406,6 @@ export default function App() {
       setCheckingIds((prev) => ({ ...prev, [id]: false }));
       showToast('Checked Quota', 'Live check completed. Quota verified against target portal.', 'info');
     }, 600);
-  };
-
-  // Refresh all monitors
-  const handleRefreshAll = () => {
-    setIsRefreshingAll(true);
-    setTimeout(() => {
-      setMonitors((prev) =>
-        prev.map((mon) => ({
-          ...mon,
-          lastChecked: new Date().toISOString()
-        }))
-      );
-      setIsRefreshingAll(false);
-      showToast('Check All Completed', `Refreshed quota status for ${monitors.length} courses.`, 'success');
-    }, 900);
   };
 
   // Add new monitor from modal
@@ -701,7 +722,6 @@ export default function App() {
   }, [monitors, filterType, searchQuery]);
 
   // Quick stats
-  const activeCount = monitors.filter((m) => m.status === 'active').length;
   const openSeatsCount = monitors.reduce((sum, m) => sum + (m.availableSeats > 0 ? m.availableSeats : 0), 0);
   const totalEmailsSent = monitors.reduce(
     (sum, m) => sum + m.history.filter((h) => h.emailDispatched).length,
@@ -748,30 +768,17 @@ export default function App() {
       <AuthPage
         onLoginSuccess={handleLoginSuccess}
         defaultLanguage="tr"
+        currentTheme={theme}
+        onToggleTheme={handleThemeChange}
       />
     );
   }
 
   // ROUTE 3: Student Tracker Dashboard (Logged-in user)
   return (
-    <div className="min-h-screen bg-[#FBFBFA] text-stone-900 flex flex-col font-sans">
-      {/* Top Header: When scrolled down, heading/status disappears and ONLY Add CRN button remains! */}
+    <div className="min-h-screen bg-[#FAF9F5] dark:bg-[#121214] text-stone-900 dark:text-stone-100 flex flex-col font-sans transition-colors duration-200">
+      {/* Top Header: Simple header with Left Profile Dropdown & Right CRN / OBS buttons */}
       <Header
-        activeCount={activeCount}
-        totalCount={monitors.length}
-        soundEnabled={settings.soundAlert}
-        onToggleSound={() =>
-          setSettings((prev) => ({ ...prev, soundAlert: !prev.soundAlert }))
-        }
-        isAutoRefreshing={settings.autoRefreshActive}
-        onToggleAutoRefresh={() =>
-          setSettings((prev) => ({ ...prev, autoRefreshActive: !prev.autoRefreshActive }))
-        }
-        onOpenAddModal={() => setIsAddModalOpen(true)}
-        onOpenItuObsModal={() => setIsItuObsBrowserOpen(true)}
-        onManualRefreshAll={handleRefreshAll}
-        isRefreshingAll={isRefreshingAll}
-        isScrolled={isScrolled}
         currentUser={currentUser}
         onSignOut={handleSignOut}
         onOpenProfile={() => {
@@ -781,6 +788,11 @@ export default function App() {
         }}
         language={language}
         onChangeLanguage={handleLanguageChange}
+        theme={theme}
+        onChangeTheme={handleThemeChange}
+        onOpenAddModal={() => setIsAddModalOpen(true)}
+        onOpenItuObsModal={() => setIsItuObsBrowserOpen(true)}
+        isScrolled={isScrolled}
       />
 
       {/* Main Content Area */}
@@ -788,13 +800,13 @@ export default function App() {
         {/* CRN-First Primary Input Box: Ask ONLY for CRN! (No email input needed) */}
         <section
           id="crn-input-section"
-          className="bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs transition-all"
+          className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 p-5 shadow-xs transition-all"
         >
           <form onSubmit={handleQuickAddCrn} className="space-y-3">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* CRN input */}
               <div className="relative flex-1">
-                <div className="absolute left-3.5 top-3 text-stone-400 font-mono text-xs font-semibold">
+                <div className="absolute left-3.5 top-3 text-stone-400 dark:text-stone-500 font-mono text-xs font-semibold">
                   CRN:
                 </div>
                 <input
@@ -807,7 +819,7 @@ export default function App() {
                     setQuickCrn(e.target.value.replace(/\D/g, ''));
                     setQuickError(null);
                   }}
-                  className="w-full pl-14 pr-4 py-2.5 text-sm font-mono font-bold tracking-wide rounded-xl border border-stone-300 bg-stone-50/50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900 transition-all placeholder:font-normal placeholder:tracking-normal placeholder:font-sans placeholder:text-stone-400"
+                  className="w-full pl-14 pr-4 py-2.5 text-sm font-mono font-bold tracking-wide rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-800/80 text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-stone-800 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 focus:border-stone-900 dark:focus:border-stone-400 transition-all placeholder:font-normal placeholder:tracking-normal placeholder:font-sans placeholder:text-stone-400 dark:placeholder:text-stone-500"
                 />
               </div>
 
@@ -815,7 +827,7 @@ export default function App() {
               <button
                 type="submit"
                 disabled={isQuickLoading || !quickCrn.trim()}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 active:scale-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:pointer-events-none shrink-0"
+                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 disabled:pointer-events-none shrink-0"
               >
                 {isQuickLoading ? (
                   <>
@@ -832,16 +844,16 @@ export default function App() {
             </div>
 
             {quickError && (
-              <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-200">
+              <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 p-2.5 rounded-xl border border-red-200 dark:border-red-800">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{quickError}</span>
               </div>
             )}
 
             {/* Quick helper line with 1-click popular CRNs & Account indicator */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-stone-500">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-stone-500 dark:text-stone-400">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-stone-400">{t.quickSamples}:</span>
+                <span className="text-stone-400 dark:text-stone-500">{t.quickSamples}:</span>
                 {SAMPLE_CRN_CHIPS.map((chip) => (
                   <button
                     key={chip.crn}
@@ -850,17 +862,17 @@ export default function App() {
                       setQuickCrn(chip.crn);
                       setQuickError(null);
                     }}
-                    className="px-2 py-0.5 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-700 font-mono transition-colors cursor-pointer"
+                    className="px-2 py-0.5 rounded-md bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 font-mono transition-colors cursor-pointer"
                   >
                     {chip.crn} ({chip.code})
                   </button>
                 ))}
               </div>
 
-              <div className="flex items-center gap-1 text-stone-400">
-                <Mail className="h-3 w-3 text-stone-400" />
+              <div className="flex items-center gap-1 text-stone-400 dark:text-stone-500">
+                <Mail className="h-3 w-3 text-stone-400 dark:text-stone-500" />
                 <span>{t.alertDestination}:</span>
-                <span className="font-semibold text-stone-700 font-mono">{currentUser.email}</span>
+                <span className="font-semibold text-stone-700 dark:text-stone-300 font-mono">{currentUser.email}</span>
               </div>
             </div>
           </form>
@@ -870,15 +882,15 @@ export default function App() {
         {monitors.length > 0 && (
           <section
             id="registration-stats-bar"
-            className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white dark:bg-stone-900 p-3.5 rounded-2xl border border-stone-200/90 dark:border-stone-800 shadow-2xs"
           >
             <div className="flex items-center gap-3 p-1.5">
-              <div className="h-9 w-9 rounded-xl bg-stone-100 flex items-center justify-center font-mono font-bold text-stone-700 text-sm">
+              <div className="h-9 w-9 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center font-mono font-bold text-stone-700 dark:text-stone-300 text-sm">
                 #
               </div>
               <div>
-                <div className="text-lg font-extrabold text-stone-900">{monitors.length}</div>
-                <div className="text-[11px] text-stone-500 font-medium">{t.statsActive}</div>
+                <div className="text-lg font-extrabold text-stone-900 dark:text-stone-100">{monitors.length}</div>
+                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">{t.statsActive}</div>
               </div>
             </div>
 
@@ -886,8 +898,8 @@ export default function App() {
               <div
                 className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs ${
                   openSeatsCount > 0
-                    ? 'bg-emerald-100 text-emerald-800 animate-pulse'
-                    : 'bg-stone-100 text-stone-500'
+                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 animate-pulse'
+                    : 'bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400'
                 }`}
               >
                 <Zap className="h-4 w-4" />
@@ -895,40 +907,40 @@ export default function App() {
               <div>
                 <div
                   className={`text-lg font-extrabold ${
-                    openSeatsCount > 0 ? 'text-emerald-600 font-mono' : 'text-stone-900'
+                    openSeatsCount > 0 ? 'text-emerald-600 dark:text-emerald-400 font-mono' : 'text-stone-900 dark:text-stone-100'
                   }`}
                 >
                   {openSeatsCount}
                 </div>
-                <div className="text-[11px] text-stone-500 font-medium">{t.statsOpenSeats}</div>
+                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">{t.statsOpenSeats}</div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 p-1.5">
-              <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-800 flex items-center justify-center font-bold text-xs">
-                <Mail className="h-4 w-4 text-amber-700" />
+              <div className="h-9 w-9 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 flex items-center justify-center font-bold text-xs">
+                <Mail className="h-4 w-4 text-amber-700 dark:text-amber-400" />
               </div>
               <div>
-                <div className="text-lg font-extrabold text-stone-900 font-mono">
+                <div className="text-lg font-extrabold text-stone-900 dark:text-stone-100 font-mono">
                   {totalEmailsSent}
                 </div>
-                <div className="text-[11px] text-stone-500 font-medium">{t.statsEmails}</div>
+                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">{t.statsEmails}</div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 p-1.5">
-              <div className="h-9 w-9 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center">
-                <Globe className="h-4 w-4 text-stone-600" />
+              <div className="h-9 w-9 rounded-xl bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 flex items-center justify-center">
+                <Globe className="h-4 w-4 text-stone-600 dark:text-stone-400" />
               </div>
               <div>
                 <button
                   onClick={() => setIsSourceInspectorOpen(true)}
-                  className="text-xs font-bold text-stone-900 hover:text-amber-700 transition-colors flex items-center gap-1 cursor-pointer"
+                  className="text-xs font-bold text-stone-900 dark:text-stone-100 hover:text-amber-700 dark:hover:text-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <span>obs.itu.edu.tr</span>
                   <span className="text-[10px] text-stone-400">↗</span>
                 </button>
-                <div className="text-[11px] text-stone-500 font-medium">{t.statsSourceWebPage}</div>
+                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">{t.statsSourceWebPage}</div>
               </div>
             </div>
           </section>
@@ -946,7 +958,7 @@ export default function App() {
                 placeholder={t.searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-200 bg-white placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 focus:border-stone-900 dark:focus:border-stone-400"
               />
             </div>
 
@@ -963,8 +975,8 @@ export default function App() {
                   onClick={() => setFilterType(f.id as typeof filterType)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     filterType === f.id
-                      ? 'bg-stone-900 text-white shadow-2xs'
-                      : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+                      ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 shadow-2xs'
+                      : 'bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-800 hover:bg-stone-50 dark:hover:bg-stone-800'
                   }`}
                 >
                   {f.label}
@@ -978,20 +990,20 @@ export default function App() {
         {monitors.length === 0 ? (
           <div
             id="empty-state-card"
-            className="p-12 text-center bg-white rounded-2xl border border-stone-200/90 max-w-xl mx-auto space-y-5 shadow-2xs animate-in fade-in duration-200"
+            className="p-12 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200/90 dark:border-stone-800 max-w-xl mx-auto space-y-5 shadow-2xs animate-in fade-in duration-200"
           >
-            <div className="h-14 w-14 rounded-2xl bg-stone-100 mx-auto flex items-center justify-center text-stone-600 font-bold font-mono text-xl shadow-inner">
+            <div className="h-14 w-14 rounded-2xl bg-stone-100 dark:bg-stone-800 mx-auto flex items-center justify-center text-stone-600 dark:text-stone-300 font-bold font-mono text-xl shadow-inner">
               CRN
             </div>
             <div className="space-y-1.5">
-              <h3 className="text-base font-bold text-stone-900">
+              <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
                 {t.emptyStateTitle}
               </h3>
-              <p className="text-xs text-stone-500 max-w-md mx-auto leading-relaxed">
+              <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto leading-relaxed">
                 {language === 'tr' ? (
-                  <>İTÜ'deki 5 haneli CRN kodunu girmeniz yeterlidir. Sistem <span className="font-mono text-stone-700">obs.itu.edu.tr</span> adresini sorgular, ders adı, hoca ve anlık kontenjanı alır ve yer açıldığında <span className="font-semibold text-stone-800">{currentUser.email}</span> adresinize e-posta gönderir.</>
+                  <>İTÜ'deki 5 haneli CRN kodunu girmeniz yeterlidir. Sistem <span className="font-mono text-stone-700 dark:text-stone-300">obs.itu.edu.tr</span> adresini sorgular, ders adı, hoca ve anlık kontenjanı alır ve yer açıldığında <span className="font-semibold text-stone-800 dark:text-stone-200">{currentUser.email}</span> adresinize e-posta gönderir.</>
                 ) : (
-                  <>Just provide the 5-digit CRN from İTÜ. The system queries <span className="font-mono text-stone-700">obs.itu.edu.tr</span>, gathers course title, instructor, schedule, and live quota, and emails you at <span className="font-semibold text-stone-800">{currentUser.email}</span> as soon as a seat opens.</>
+                  <>Just provide the 5-digit CRN from İTÜ. The system queries <span className="font-mono text-stone-700 dark:text-stone-300">obs.itu.edu.tr</span>, gathers course title, instructor, schedule, and live quota, and emails you at <span className="font-semibold text-stone-800 dark:text-stone-200">{currentUser.email}</span> as soon as a seat opens.</>
                 )}
               </p>
             </div>
@@ -999,19 +1011,19 @@ export default function App() {
             <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
               <button
                 onClick={() => setIsItuObsBrowserOpen(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300/80 rounded-xl transition-all cursor-pointer shadow-2xs"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-950 dark:text-amber-200 border border-amber-300/80 dark:border-amber-700/80 rounded-xl transition-all cursor-pointer shadow-2xs"
               >
-                <BookOpen className="h-4 w-4 text-amber-700" />
+                <BookOpen className="h-4 w-4 text-amber-700 dark:text-amber-400" />
                 <span>{t.btnObsSchedule}</span>
               </button>
             </div>
           </div>
         ) : filteredMonitors.length === 0 ? (
-          <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 max-w-md mx-auto space-y-2">
-            <h4 className="text-sm font-bold text-stone-800">
+          <div className="p-8 text-center bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-md mx-auto space-y-2">
+            <h4 className="text-sm font-bold text-stone-800 dark:text-stone-200">
               {language === 'tr' ? `"${searchQuery}" ile eşleşen ders bulunamadı` : `No classes match "${searchQuery}"`}
             </h4>
-            <p className="text-xs text-stone-500">
+            <p className="text-xs text-stone-500 dark:text-stone-400">
               {language === 'tr' ? 'Arama terimini temizlemeyi veya filtreleri değiştirmeyi deneyebilirsiniz.' : 'Try clearing the search query or changing filters.'}
             </p>
             <button
@@ -1019,7 +1031,7 @@ export default function App() {
                 setSearchQuery('');
                 setFilterType('all');
               }}
-              className="text-xs text-stone-900 font-semibold underline pt-1 cursor-pointer"
+              className="text-xs text-stone-900 dark:text-stone-100 font-semibold underline pt-1 cursor-pointer"
             >
               {language === 'tr' ? 'Filtreleri sıfırla' : 'Reset filters'}
             </button>
@@ -1047,27 +1059,27 @@ export default function App() {
         {/* How It Works Guide for Students */}
         <section
           id="student-instructions"
-          className="rounded-2xl border border-stone-200/90 bg-white p-5 shadow-xs"
+          className="rounded-2xl border border-stone-200/90 dark:border-stone-800 bg-white dark:bg-stone-900 p-5 shadow-xs"
         >
-          <h2 className="text-xs font-bold text-stone-900 mb-3 flex items-center gap-2">
+          <h2 className="text-xs font-bold text-stone-900 dark:text-stone-100 mb-3 flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
             <span>{t.howItWorksTitle}</span>
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-stone-600">
-            <div className="p-3 bg-[#FAF9F5] rounded-xl border border-stone-200/70">
-              <div className="font-bold text-stone-900 mb-1">{t.step1Title}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-stone-600 dark:text-stone-400">
+            <div className="p-3 bg-[#FAF9F5] dark:bg-stone-800/60 rounded-xl border border-stone-200/70 dark:border-stone-700/60">
+              <div className="font-bold text-stone-900 dark:text-stone-100 mb-1">{t.step1Title}</div>
               <p className="leading-relaxed">
                 {t.step1Desc}
               </p>
             </div>
-            <div className="p-3 bg-[#FAF9F5] rounded-xl border border-stone-200/70">
-              <div className="font-bold text-stone-900 mb-1">{t.step2Title}</div>
+            <div className="p-3 bg-[#FAF9F5] dark:bg-stone-800/60 rounded-xl border border-stone-200/70 dark:border-stone-700/60">
+              <div className="font-bold text-stone-900 dark:text-stone-100 mb-1">{t.step2Title}</div>
               <p className="leading-relaxed">
                 {t.step2Desc}
               </p>
             </div>
-            <div className="p-3 bg-[#FAF9F5] rounded-xl border border-stone-200/70">
-              <div className="font-bold text-stone-900 mb-1">{t.step3Title}</div>
+            <div className="p-3 bg-[#FAF9F5] dark:bg-stone-800/60 rounded-xl border border-stone-200/70 dark:border-stone-700/60">
+              <div className="font-bold text-stone-900 dark:text-stone-100 mb-1">{t.step3Title}</div>
               <p className="leading-relaxed">
                 {t.step3Desc.replace('{email}', currentUser.email)}
               </p>
@@ -1077,15 +1089,15 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-stone-200 bg-white py-4 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500">
+      <footer className="border-t border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 py-4 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500 dark:text-stone-400">
           <div>
-            CRN Quota Monitor • Integrated with obs.itu.edu.tr • Logged in as <span className="font-semibold text-stone-800">{currentUser.name}</span>
+            CRN Quota Monitor • Integrated with obs.itu.edu.tr • Logged in as <span className="font-semibold text-stone-800 dark:text-stone-200">{currentUser.name}</span>
           </div>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsItuObsBrowserOpen(true)}
-              className="hover:text-stone-800 transition-colors cursor-pointer font-medium flex items-center gap-1"
+              className="hover:text-stone-800 dark:hover:text-stone-200 transition-colors cursor-pointer font-medium flex items-center gap-1"
             >
               <BookOpen className="h-3.5 w-3.5" />
               <span>İTÜ OBS Browser</span>
@@ -1093,7 +1105,7 @@ export default function App() {
             <span>•</span>
             <button
               onClick={() => setIsSourceInspectorOpen(true)}
-              className="hover:text-stone-800 transition-colors cursor-pointer"
+              className="hover:text-stone-800 dark:hover:text-stone-200 transition-colors cursor-pointer"
             >
               Source Scraper
             </button>
@@ -1190,6 +1202,8 @@ export default function App() {
           monitorsCount={monitors.length}
           language={language}
           onChangeLanguage={handleLanguageChange}
+          theme={theme}
+          onChangeTheme={handleThemeChange}
         />
       )}
 

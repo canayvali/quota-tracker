@@ -18,18 +18,18 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   if (variant === 'login') {
     return (
       <div className={`flex flex-col items-center justify-center gap-1.5 ${className}`}>
-        <div className="text-[11px] font-medium text-stone-400 flex items-center gap-1">
+        <div className="text-[11px] font-medium text-stone-400 dark:text-stone-500 flex items-center gap-1">
           <Globe className="h-3 w-3" />
           <span>Dil Seçimi / Select Language</span>
         </div>
-        <div className="inline-flex items-center p-1 bg-stone-100/90 rounded-full border border-stone-200/80 shadow-2xs">
+        <div className="inline-flex items-center p-1 bg-stone-100/90 dark:bg-stone-800/90 rounded-full border border-stone-200/80 dark:border-stone-700 shadow-2xs">
           <button
             type="button"
             onClick={() => onChangeLanguage('tr')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
               language === 'tr'
-                ? 'bg-white text-stone-900 shadow-xs scale-102'
-                : 'text-stone-500 hover:text-stone-800'
+                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-xs scale-102'
+                : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200'
             }`}
           >
             <span>🇹🇷</span>
@@ -40,8 +40,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
             onClick={() => onChangeLanguage('en')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
               language === 'en'
-                ? 'bg-white text-stone-900 shadow-xs scale-102'
-                : 'text-stone-500 hover:text-stone-800'
+                ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-xs scale-102'
+                : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200'
             }`}
           >
             <span>🇬🇧</span>

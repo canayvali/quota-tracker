@@ -74,7 +74,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
         disabled={disabled}
         className={`w-full ${
           hasLeftLockIcon ? 'pl-9' : 'pl-3.5'
-        } pr-10 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900 transition-all font-mono tracking-wide ${inputClassName}`}
+        } pr-10 py-2 text-xs rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 focus:border-stone-900 dark:focus:border-stone-400 transition-all font-mono tracking-wide ${inputClassName}`}
       />
       <button
         type="button"
@@ -100,8 +100,8 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
         onContextMenu={(e) => e.preventDefault()}
         className={`absolute right-2.5 top-2 p-1 rounded-md transition-all cursor-pointer select-none ${
           isVisible
-            ? 'text-amber-800 bg-amber-100 ring-2 ring-amber-400/50 scale-105'
-            : 'text-stone-400 hover:text-stone-700 hover:bg-stone-100 active:scale-95'
+            ? 'text-amber-800 bg-amber-100 dark:bg-amber-950 dark:text-amber-300 ring-2 ring-amber-400/50 scale-105'
+            : 'text-stone-400 dark:text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 active:scale-95'
         }`}
       >
         {isVisible ? (

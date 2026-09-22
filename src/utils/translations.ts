@@ -58,6 +58,10 @@ export interface TranslationDictionary {
   btnAddCrn: string;
   autoRefreshTooltip: string;
   soundTooltip: string;
+  appearancePreference: string;
+  lightMode: string;
+  darkMode: string;
+  accountSettings: string;
 
   // Quick CRN Input Box
   quickCrnPlaceholder: string;
@@ -153,7 +157,7 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
 
     // Auth Page
     authBadge: 'Canlı Kontenjan Takipçisi',
-    authTitle: 'Öğrenci Portalı',
+    authTitle: 'Kontenjan Takipçisi',
     authSubtitle: 'Ders kontenjanlarını anlık takip etmek için giriş yapın veya hesap oluşturun. Kontenjan açıldığında bildirimler kayıtlı e-posta adresinize gönderilir.',
     tabSignIn: 'Giriş Yap',
     tabSignUp: 'Kayıt Ol',
@@ -201,6 +205,10 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     btnAddCrn: 'CRN Ekle',
     autoRefreshTooltip: '45 saniyede bir otomatik sorgulama:',
     soundTooltip: 'Sesli bildirim uyarısı:',
+    appearancePreference: 'Görünüm',
+    lightMode: 'Aydınlık',
+    darkMode: 'Koyu',
+    accountSettings: 'Hesap Ayarları',
 
     // Quick CRN Input Box
     quickCrnPlaceholder: '5 haneli CRN giriniz (örn. 12486)',
@@ -342,6 +350,10 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     btnAddCrn: 'Add CRN',
     autoRefreshTooltip: 'Auto-check every 45s:',
     soundTooltip: 'Sound alert:',
+    appearancePreference: 'Appearance',
+    lightMode: 'Light',
+    darkMode: 'Dark',
+    accountSettings: 'Account Settings',
 
     // Quick CRN Input Box
     quickCrnPlaceholder: 'Enter 5-digit CRN (e.g. 12486)',

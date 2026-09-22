@@ -786,13 +786,319 @@ app.post('/api/auth/change-password', (req, res) => {
   });
 });
 
-// Endpoint: Delete User
+// ==========================================
+// Password Reset (Forgot Password) Flow
+// ==========================================
+
+interface PasswordResetRecord {
+  code: string;
+  email: string;
+  expiresAt: number;
+  attempts: number;
+}
+const passwordResetCodes = new Map<string, PasswordResetRecord>();
+
+// Endpoint: Send 6-digit Password Reset Code via SMTP
+app.post('/api/auth/forgot-password/send-code', async (req, res) => {
+  try {
+    const { email, smtpConfig } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+
+    if (smtpConfig) {
+      activeServerSmtpConfig = smtpConfig;
+    }
+    const effectiveSmtp = smtpConfig || activeServerSmtpConfig;
+
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lütfen geçerli bir e-posta adresi giriniz / Please provide a valid email address.'
+      });
+    }
+
+    // Generate 6-digit OTP
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes validity
+
+    passwordResetCodes.set(normalizedEmail, {
+      code,
+      email: normalizedEmail,
+      expiresAt,
+      attempts: 0
+    });
+
+    const user = serverUsers.get(normalizedEmail);
+    const recipientName = user ? user.name : 'İTÜ Öğrencisi / Student';
+
+    const subject = `İTÜ OBS Quota Tracker - Şifre Sıfırlama Kodu / Password Reset Code: ${code}`;
+    const body = `🔒 ŞİFRE SIFIRLAMA KODU / PASSWORD RESET CODE
+
+Merhaba ${recipientName},
+
+İTÜ OBS Kontenjan Takip Sistemi hesabınız için şifre sıfırlama talebinde bulundunuz. 
+Şifrenizi yenilemek için 6 haneli güvenlik kodunuz:
+
+==================================================
+              👉   ${code}   👈
+==================================================
+
+Bu kod 15 dakika boyunca geçerlidir. 
+Bu talebi siz yapmadıysanız, hesabınız güvenliğini korumak için lütfen bu e-postayı dikkate almayınız.
+
+------------------------------------------------------------
+ENGLISH VERSION
+------------------------------------------------------------
+
+🔒 PASSWORD RESET CODE
+
+Hello ${recipientName},
+
+A password reset request was received for your ITU OBS Quota Tracker account.
+Your 6-digit verification code to reset your password is:
+
+==================================================
+              👉   ${code}   👈
+==================================================
+
+This code is valid for 15 minutes.
+If you did not request this, please disregard this email.
+
+—
+İTÜ OBS Quota Alert System (${effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user})`;
+
+    const transporter = createTransporter(effectiveSmtp ? {
+      host: effectiveSmtp.smtpHost,
+      port: effectiveSmtp.smtpPort,
+      user: effectiveSmtp.smtpUsername,
+      pass: effectiveSmtp.smtpPassword
+    } : undefined);
+
+    const senderName = effectiveSmtp?.senderName || 'İTÜ OBS Quota Alert System';
+    const senderAddress = effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user;
+
+    const mailInfo = await transporter.sendMail({
+      from: `"${senderName}" <${senderAddress}>`,
+      to: normalizedEmail,
+      subject,
+      text: body,
+      html: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px 24px; background: #FAF9F5; border-radius: 16px; border: 1px solid #E7E5E4; color: #1C1917;">
+  <div style="text-align: center; margin-bottom: 24px;">
+    <div style="display: inline-block; background: #1C1917; color: #FAF9F5; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 8px;">
+      İTÜ OBS KONTENJAN TAKİP SİSTEMİ
+    </div>
+  </div>
+  
+  <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 12px 0; text-align: center; color: #1C1917;">
+    Şifre Sıfırlama Talebi / Password Reset Code
+  </h2>
+  
+  <p style="font-size: 14px; color: #44403C; line-height: 1.6; margin: 0 0 20px 0; text-align: center;">
+    Merhaba <strong>${recipientName}</strong>,<br/>
+    Hesabınızın şifresini yenilemek için 6 haneli güvenlik kodunuz:
+  </p>
+  
+  <div style="text-align: center; margin: 24px 0;">
+    <span style="display: inline-block; background: #FFFFFF; border: 2px solid #DC2626; border-radius: 12px; font-size: 32px; font-weight: 800; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 8px; padding: 14px 28px; color: #B91C1C; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.08);">
+      ${code}
+    </span>
+  </div>
+  
+  <p style="font-size: 12px; color: #78716C; text-align: center; margin: 0 0 20px 0;">
+    Bu kod <strong>15 dakika</strong> boyunca geçerlidir. Lütfen bu kodu kimseyle paylaşmayınız.
+  </p>
+
+  <div style="background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 12px; margin: 16px 0; font-size: 12px; color: #991B1B; text-align: center;">
+    ⚠️ Bu sıfırlama talebini siz yapmadıysanız lütfen bu e-postayı dikkate almayınız.
+  </div>
+  
+  <hr style="border: none; border-top: 1px solid #E7E5E4; margin: 20px 0;" />
+  
+  <p style="font-size: 12px; color: #78716C; line-height: 1.5; text-align: center; margin: 0 0 8px 0;">
+    <strong>English:</strong> Hello <strong>${recipientName}</strong>, your 6-digit password reset verification code is <strong>${code}</strong>. Valid for 15 minutes.
+  </p>
+  
+  <div style="font-size: 11px; color: #A8A29E; text-align: center; margin-top: 20px;">
+    ${senderName} &bull; ${senderAddress}
+  </div>
+</div>
+      `
+    });
+
+    console.log(`[Password Reset] 6-digit reset code delivered to ${normalizedEmail} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}. MessageId: ${mailInfo.messageId}`);
+    return res.json({
+      success: true,
+      message: `${normalizedEmail} adresine 6 haneli şifre sıfırlama kodu gönderildi. / Reset code sent to ${normalizedEmail}.`,
+      previewData: {
+        recipient: normalizedEmail,
+        subject,
+        code,
+        body
+      }
+    });
+  } catch (err: any) {
+    console.error('[Auth Reset Code Send Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: `Şifre sıfırlama e-postası gönderilemedi: ` + (err.message || 'SMTP hatası.')
+    });
+  }
+});
+
+// Endpoint: Verify Reset Code & Set New Password
+app.post('/api/auth/forgot-password/verify-and-reset', (req, res) => {
+  const { email, code, newPassword } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const normalizedCode = (code || '').toString().trim();
+
+  if (!normalizedEmail || !normalizedCode || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'E-posta, 6 haneli kod ve yeni şifre alanları zorunludur.'
+    });
+  }
+
+  const record = passwordResetCodes.get(normalizedEmail);
+  if (!record) {
+    return res.status(400).json({
+      success: false,
+      message: 'Şifre sıfırlama kodu bulunamadı veya süresi doldu. Lütfen tekrar sıfırlama kodu isteyiniz.'
+    });
+  }
+
+  if (Date.now() > record.expiresAt) {
+    passwordResetCodes.delete(normalizedEmail);
+    return res.status(400).json({
+      success: false,
+      message: 'Şifre sıfırlama kodunun süresi dolmuş. Lütfen yeni kod talep ediniz.'
+    });
+  }
+
+  if (record.code !== normalizedCode) {
+    record.attempts += 1;
+    if (record.attempts >= 5) {
+      passwordResetCodes.delete(normalizedEmail);
+      return res.status(400).json({
+        success: false,
+        message: 'Çok fazla hatalı kod denemesi yapıldı. Lütfen yeni bir sıfırlama kodu isteyiniz.'
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: `Geçersiz 6 haneli kod. Kalan hak: ${5 - record.attempts}`
+    });
+  }
+
+  if (newPassword.trim().length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Yeni şifre en az 6 karakter uzunluğunda olmalıdır.'
+    });
+  }
+
+  // Update password in serverUsers if present
+  const user = serverUsers.get(normalizedEmail);
+  if (user) {
+    user.password = newPassword.trim();
+    serverUsers.set(normalizedEmail, user);
+  }
+
+  // Delete used code
+  passwordResetCodes.delete(normalizedEmail);
+
+  return res.json({
+    success: true,
+    message: 'Şifreniz başarıyla sıfırlandı ve güncellendi! / Password reset successfully.'
+  });
+});
+
+// ==========================================
+// Admin Database Accounts Management Endpoints
+// ==========================================
+
+// Endpoint: Get all server-registered accounts for Admin
+app.get('/api/admin/users', (req, res) => {
+  const usersList: ServerUser[] = [];
+  for (const user of serverUsers.values()) {
+    usersList.push({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      password: user.password,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt
+    });
+  }
+  return res.json({
+    success: true,
+    users: usersList,
+    count: usersList.length
+  });
+});
+
+// Endpoint: Admin Update User Account (password, name, verification, etc.)
+app.post('/api/admin/user/update', (req, res) => {
+  const { email, name, password, isVerified } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    return res.status(400).json({
+      success: false,
+      message: 'Kullanıcı e-posta adresi belirtilmedi.'
+    });
+  }
+
+  let user = serverUsers.get(normalizedEmail);
+  if (!user) {
+    // If user was created in client localStorage and not in server memory yet, create it
+    user = {
+      id: 'user-' + Date.now(),
+      name: name || 'Öğrenci',
+      email: normalizedEmail,
+      password: password || '12345678',
+      isVerified: isVerified !== undefined ? isVerified : true,
+      createdAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString()
+    };
+  } else {
+    if (name !== undefined) user.name = name.trim();
+    if (password !== undefined && password.trim().length > 0) user.password = password.trim();
+    if (isVerified !== undefined) user.isVerified = Boolean(isVerified);
+  }
+
+  serverUsers.set(normalizedEmail, user);
+
+  return res.json({
+    success: true,
+    message: `${normalizedEmail} kullanıcısının bilgileri ve şifresi başarıyla güncellendi.`,
+    user
+  });
+});
+
+// Endpoint: Admin Delete User Account
+app.post('/api/admin/user/delete', (req, res) => {
+  const { email } = req.body || {};
+  const normalizedEmail = (email || '').trim().toLowerCase();
+
+  serverUsers.delete(normalizedEmail);
+  verificationCodes.delete(normalizedEmail);
+  passwordResetCodes.delete(normalizedEmail);
+
+  return res.json({
+    success: true,
+    message: `Kullanıcı ${normalizedEmail} veritabanından kalıcı olarak silindi.`
+  });
+});
+
+// Endpoint: Delete User (client self-delete)
 app.delete('/api/auth/delete-user', (req, res) => {
   const { email } = req.body || req.query || {};
   const normalizedEmail = (email || '').trim().toLowerCase();
 
   serverUsers.delete(normalizedEmail);
   verificationCodes.delete(normalizedEmail);
+  passwordResetCodes.delete(normalizedEmail);
 
   return res.json({
     success: true,

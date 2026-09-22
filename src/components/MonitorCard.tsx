@@ -55,11 +55,11 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
   return (
     <div
       id={`monitor-card-${monitor.crn}`}
-      className={`relative rounded-2xl bg-white border transition-all shadow-xs ${
+      className={`relative rounded-2xl bg-white dark:bg-stone-900 border transition-all shadow-xs ${
         isAvailable
-          ? 'border-emerald-400/80 ring-2 ring-emerald-500/10'
-          : 'border-stone-200/90 hover:border-stone-300'
-      } ${monitor.status === 'paused' ? 'opacity-70 bg-stone-50/50' : ''}`}
+          ? 'border-emerald-400/80 ring-2 ring-emerald-500/10 dark:ring-emerald-500/20'
+          : 'border-stone-200/90 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700'
+      } ${monitor.status === 'paused' ? 'opacity-70 bg-stone-50/50 dark:bg-stone-900/50' : ''}`}
     >
       {/* Top Banner on Open Seat */}
       {isAvailable && (
@@ -79,28 +79,28 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-stone-900 text-amber-400 shadow-2xs">
+              <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-stone-900 dark:bg-stone-800 text-amber-400 shadow-2xs border border-stone-800 dark:border-stone-700">
                 CRN {monitor.crn}
               </span>
-              <span className="font-bold text-stone-900 text-base">
+              <span className="font-bold text-stone-900 dark:text-stone-100 text-base">
                 {monitor.courseCode}
               </span>
               <span
                 className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
                   monitor.status === 'active'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                    : 'bg-stone-100 text-stone-600'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
+                    : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
                 }`}
               >
                 {monitor.status === 'active' ? (language === 'tr' ? 'Aktif' : 'Active') : (language === 'tr' ? 'Durduruldu' : 'Paused')}
               </span>
             </div>
-            <h3 className="text-sm font-semibold text-stone-800 line-clamp-1">
+            <h3 className="text-sm font-semibold text-stone-800 dark:text-stone-200 line-clamp-1">
               {monitor.courseTitle}
             </h3>
             {monitor.instructor && (
-              <p className="text-xs text-stone-500 flex items-center gap-1">
-                <User className="h-3 w-3 text-stone-400" />
+              <p className="text-xs text-stone-500 dark:text-stone-400 flex items-center gap-1">
+                <User className="h-3 w-3 text-stone-400 dark:text-stone-500" />
                 <span>{monitor.instructor}</span>
               </p>
             )}
@@ -111,14 +111,14 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
             <button
               onClick={() => onTogglePause(monitor.id)}
               title={monitor.status === 'active' ? t.btnPause : t.btnResume}
-              className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
             >
-              {monitor.status === 'active' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 text-emerald-600" />}
+              {monitor.status === 'active' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
             </button>
             <button
               onClick={() => onDelete(monitor.id)}
               title={t.btnDelete}
-              className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 text-stone-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -129,48 +129,48 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
         <div
           className={`p-3.5 rounded-xl border mb-4 ${
             isAvailable
-              ? 'bg-emerald-50/70 border-emerald-200'
-              : 'bg-stone-50/70 border-stone-200/80'
+              ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/50'
+              : 'bg-stone-50/70 dark:bg-stone-800/50 border-stone-200/80 dark:border-stone-800'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-stone-600">
+            <span className="text-xs font-medium text-stone-600 dark:text-stone-400">
               {language === 'tr' ? 'Güncel Kontenjan Durumu' : 'Current Quota Status'}
             </span>
             {isAvailable ? (
-              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-stone-800 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 shadow-2xs">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                 {monitor.availableSeats} {language === 'tr' ? 'Boş Yer' : (monitor.availableSeats > 1 ? 'Open Seats' : 'Open Seat')}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-stone-600 bg-stone-200/80 px-2 py-0.5 rounded-full">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-stone-600 dark:text-stone-400 bg-stone-200/80 dark:bg-stone-800 px-2 py-0.5 rounded-full">
                 {t.filterFull}
               </span>
             )}
           </div>
 
           {/* Progress Bar */}
-          <div className="w-full h-2.5 bg-stone-200 rounded-full overflow-hidden mb-2">
+          <div className="w-full h-2.5 bg-stone-200 dark:bg-stone-700/80 rounded-full overflow-hidden mb-2">
             <div
               className={`h-full transition-all duration-500 rounded-full ${
-                isAvailable ? 'bg-emerald-500' : 'bg-stone-500'
+                isAvailable ? 'bg-emerald-500' : 'bg-stone-500 dark:bg-stone-400'
               }`}
               style={{ width: `${percentFilled}%` }}
             />
           </div>
 
-          <div className="flex items-center justify-between text-xs text-stone-600">
+          <div className="flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
             <div>
-              <span className="text-stone-400">{t.seatsEnrolled}: </span>
-              <span className="font-bold text-stone-800">
+              <span className="text-stone-400 dark:text-stone-500">{t.seatsEnrolled}: </span>
+              <span className="font-bold text-stone-800 dark:text-stone-200">
                 {monitor.enrolled} / {monitor.totalCapacity}
               </span>
             </div>
             <div>
-              <span className="text-stone-400">{t.seatsRemaining}: </span>
+              <span className="text-stone-400 dark:text-stone-500">{t.seatsRemaining}: </span>
               <span
                 className={`font-mono font-bold ${
-                  isAvailable ? 'text-emerald-700' : 'text-stone-500'
+                  isAvailable ? 'text-emerald-700 dark:text-emerald-400' : 'text-stone-500 dark:text-stone-400'
                 }`}
               >
                 {monitor.availableSeats}
@@ -180,8 +180,8 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
         </div>
 
         {/* Footer: Last Check Time & Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-stone-100 text-xs">
-          <div className="flex items-center gap-1 text-stone-400 text-[11px]">
+        <div className="flex items-center justify-between pt-2 border-t border-stone-100 dark:border-stone-800 text-xs">
+          <div className="flex items-center gap-1 text-stone-400 dark:text-stone-500 text-[11px]">
             <Clock className="h-3 w-3" />
             <span>{t.lastChecked}: {getRelativeTime(monitor.lastChecked)}</span>
           </div>
@@ -191,10 +191,10 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
               onClick={() => onCheckNow(monitor.id)}
               disabled={isChecking || monitor.status === 'paused'}
               title={t.btnCheckNow}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 active:scale-95 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 active:scale-95 rounded-lg transition-all cursor-pointer disabled:opacity-50"
             >
               <RefreshCw
-                className={`h-3 w-3 ${isChecking ? 'animate-spin text-stone-900' : ''}`}
+                className={`h-3 w-3 ${isChecking ? 'animate-spin text-stone-900 dark:text-stone-100' : ''}`}
               />
               <span className="hidden sm:inline">
                 {isChecking ? (language === 'tr' ? 'Kontrol ediliyor...' : 'Checking...') : t.btnCheckNow}
@@ -204,7 +204,7 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
             <button
               onClick={() => onViewHistory(monitor)}
               title={t.btnHistory}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 active:scale-95 rounded-lg transition-all cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 active:scale-95 rounded-lg transition-all cursor-pointer"
             >
               <History className="h-3 w-3" />
               <span className="hidden sm:inline">{t.btnHistory}</span>
@@ -213,8 +213,8 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
         </div>
 
         {/* Live Simulation Trigger (Biri dersi bıraktı / Kontenjan arttırıldı) */}
-        <div className="mt-3 pt-2.5 border-t border-dashed border-stone-200 flex items-center justify-between">
-          <span className="text-[11px] text-stone-400 font-medium">
+        <div className="mt-3 pt-2.5 border-t border-dashed border-stone-200 dark:border-stone-800 flex items-center justify-between">
+          <span className="text-[11px] text-stone-400 dark:text-stone-500 font-medium">
             {language === 'tr' ? 'Bildirim Testi:' : 'Alert Testing:'}
           </span>
 
@@ -223,7 +223,7 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
             <button
               onClick={() => setShowSimulateMenu(!showSimulateMenu)}
               title={language === 'tr' ? 'E-posta bildirimini test etmek için olay simüle et' : 'Simulate an event to test email dispatch'}
-              className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-stone-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-stone-700 dark:text-stone-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg transition-colors cursor-pointer"
             >
               <span>{language === 'tr' ? 'Test Et' : 'Simulate'}</span>
               <ChevronDown className="h-3 w-3" />
@@ -235,8 +235,8 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                   className="fixed inset-0 z-20"
                   onClick={() => setShowSimulateMenu(false)}
                 />
-                <div className="absolute right-0 bottom-full mb-1.5 w-60 rounded-xl bg-white border border-stone-200 shadow-xl py-1.5 z-30 text-xs">
-                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-stone-400 tracking-wider">
+                <div className="absolute right-0 bottom-full mb-1.5 w-60 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-xl py-1.5 z-30 text-xs">
+                  <div className="px-3 py-1 text-[10px] uppercase font-bold text-stone-400 dark:text-stone-500 tracking-wider">
                     {language === 'tr' ? 'Olay Simülasyonu' : 'Event Simulation'}
                   </div>
                   <button
@@ -244,51 +244,51 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                       onSimulateDrop(monitor.id);
                       setShowSimulateMenu(false);
                     }}
-                    className="w-full text-left px-3 py-2 text-stone-700 hover:bg-emerald-50 hover:text-emerald-900 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 text-stone-700 dark:text-stone-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-900 dark:hover:text-emerald-200 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-semibold text-emerald-800">
+                      <div className="font-semibold text-emerald-800 dark:text-emerald-400">
                         {language === 'tr' ? 'Biri Dersi Bıraktı' : 'Seat Dropped'}
                       </div>
-                      <div className="text-[10px] text-stone-500">
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400">
                         {language === 'tr' ? '"Kontenjan açıldı..." e-postası' : 'Dispatches seat drop alert'}
                       </div>
                     </div>
-                    <span className="font-mono text-emerald-600 font-bold ml-2">+1</span>
+                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold ml-2">+1</span>
                   </button>
                   <button
                     onClick={() => {
                       onSimulateCapacityIncrease(monitor.id);
                       setShowSimulateMenu(false);
                     }}
-                    className="w-full text-left px-3 py-2 text-stone-700 hover:bg-amber-50 hover:text-amber-900 flex items-center justify-between border-t border-stone-100"
+                    className="w-full text-left px-3 py-2 text-stone-700 dark:text-stone-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-900 dark:hover:text-amber-200 flex items-center justify-between border-t border-stone-100 dark:border-stone-700"
                   >
                     <div>
-                      <div className="font-semibold text-amber-800">
+                      <div className="font-semibold text-amber-800 dark:text-amber-400">
                         {language === 'tr' ? 'Kontenjan Arttırıldı' : 'Capacity Increased'}
                       </div>
-                      <div className="text-[10px] text-stone-500">
+                      <div className="text-[10px] text-stone-500 dark:text-stone-400">
                         {language === 'tr' ? '"Kontenjan arttırıldı!" e-postası' : 'Dispatches capacity alert'}
                       </div>
                     </div>
-                    <span className="font-mono text-amber-700 font-bold ml-2">+5</span>
+                    <span className="font-mono text-amber-700 dark:text-amber-400 font-bold ml-2">+5</span>
                   </button>
                   <button
                     onClick={() => {
                       onSimulateClaim(monitor.id);
                       setShowSimulateMenu(false);
                     }}
-                    className="w-full text-left px-3 py-2 text-stone-700 hover:bg-stone-50 hover:text-stone-900 flex items-center justify-between border-t border-stone-100 opacity-80"
+                    className="w-full text-left px-3 py-2 text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-700/50 hover:text-stone-900 dark:hover:text-stone-100 flex items-center justify-between border-t border-stone-100 dark:border-stone-700 opacity-80"
                   >
                     <div>
-                      <div className="font-semibold text-stone-700">
+                      <div className="font-semibold text-stone-700 dark:text-stone-300">
                         {language === 'tr' ? 'Ders Alındı (Kontenjan Düştü)' : 'Seat Taken (Decrease)'}
                       </div>
-                      <div className="text-[10px] text-stone-400">
+                      <div className="text-[10px] text-stone-400 dark:text-stone-500">
                         {language === 'tr' ? 'E-posta gönderilmez' : 'No email sent'}
                       </div>
                     </div>
-                    <span className="font-mono text-stone-500 font-bold ml-2">-1</span>
+                    <span className="font-mono text-stone-500 dark:text-stone-400 font-bold ml-2">-1</span>
                   </button>
                 </div>
               </>

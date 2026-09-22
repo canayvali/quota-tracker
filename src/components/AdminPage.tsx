@@ -1,26 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
   Check,
   CheckCircle2,
   Copy,
+  Eye,
+  EyeOff,
   History,
   Key,
+  KeyRound,
   Lock,
   LogOut,
   Mail,
   Pause,
   Play,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Shield,
   Trash2,
-  Users
+  UserCheck,
+  Users,
+  X
 } from 'lucide-react';
-import { ClassMonitor, EmailSenderConfig, GlobalSettings, QuotaHistoryEvent } from '../types';
+import { ClassMonitor, EmailSenderConfig, GlobalSettings, QuotaHistoryEvent, UserAccount } from '../types';
 import { PasswordInput } from './PasswordInput';
+import { deleteUserAccount, loadUsers, saveUsers, updateUserAccount } from '../utils/storage';
 
 interface AdminPageProps {
   onExit: () => void;
@@ -37,7 +44,7 @@ interface AdminPageProps {
   onSetAdminAuthenticated: (auth: boolean) => void;
 }
 
-type AdminTab = 'trackers' | 'email_account' | 'audit_logs' | 'security';
+type AdminTab = 'trackers' | 'users' | 'email_account' | 'audit_logs' | 'security';
 
 export const AdminPage: React.FC<AdminPageProps> = ({
   onExit,
@@ -76,6 +83,185 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   // SMTP Testing state
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Registered Users (Database) State
+  const [users, setUsers] = useState<UserAccount[]>(() => loadUsers());
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserPassword, setEditUserPassword] = useState('');
+  const [editUserVerified, setEditUserVerified] = useState(true);
+  const [showPasswordInModal, setShowPasswordInModal] = useState(false);
+  const [userSaveSuccess, setUserSaveSuccess] = useState<string | null>(null);
+  const [userSaveError, setUserSaveError] = useState<string | null>(null);
+  const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
+  const [resetEmailFeedback, setResetEmailFeedback] = useState<{ success: boolean; message: string } | null>(null);
+
+  const refreshUsersList = async () => {
+    const localUsers = loadUsers();
+    setUsers(localUsers);
+    try {
+      const res = await fetch('/api/admin/users');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.users && Array.isArray(data.users)) {
+          const map = new Map<string, UserAccount>();
+          for (const u of localUsers) {
+            if (u.email) map.set(u.email.toLowerCase(), u);
+          }
+          for (const su of data.users) {
+            if (su.email && !map.has(su.email.toLowerCase())) {
+              map.set(su.email.toLowerCase(), {
+                id: su.id || 'usr-' + Date.now(),
+                name: su.name || 'Öğrenci',
+                email: su.email,
+                password: su.password || '',
+                isVerified: su.isVerified !== false,
+                createdAt: su.createdAt || new Date().toISOString(),
+                lastLoginAt: su.lastLoginAt || new Date().toISOString()
+              });
+            }
+          }
+          const merged = Array.from(map.values());
+          setUsers(merged);
+          saveUsers(merged);
+        }
+      }
+    } catch {
+      // offline fallback
+    }
+  };
+
+  useEffect(() => {
+    if (isAdminAuthenticated) {
+      refreshUsersList();
+    }
+  }, [isAdminAuthenticated]);
+
+  const handleSelectUser = (user: UserAccount) => {
+    setSelectedUser(user);
+    setEditUserName(user.name);
+    setEditUserPassword(user.password || '');
+    setEditUserVerified(user.isVerified !== false);
+    setShowPasswordInModal(false);
+    setUserSaveSuccess(null);
+    setUserSaveError(null);
+    setResetEmailFeedback(null);
+  };
+
+  const handleGenerateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    let pass = '';
+    for (let i = 0; i < 10; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setEditUserPassword(pass);
+    setShowPasswordInModal(true);
+  };
+
+  const handleSaveUserChanges = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    const trimmedPassword = editUserPassword.trim();
+    if (trimmedPassword && trimmedPassword.length < 6) {
+      setUserSaveError('Şifre en az 6 karakter olmalıdır.');
+      return;
+    }
+
+    const updatedData: Partial<UserAccount> = {
+      name: editUserName.trim() || selectedUser.name,
+      password: trimmedPassword || selectedUser.password,
+      isVerified: editUserVerified
+    };
+
+    updateUserAccount(selectedUser.email, updatedData);
+
+    const updatedList = users.map((u) =>
+      u.email.toLowerCase() === selectedUser.email.toLowerCase()
+        ? { ...u, ...updatedData }
+        : u
+    );
+    setUsers(updatedList);
+    setSelectedUser({ ...selectedUser, ...updatedData });
+
+    try {
+      await fetch('/api/admin/user/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: selectedUser.email,
+          name: updatedData.name,
+          password: updatedData.password,
+          isVerified: updatedData.isVerified
+        })
+      });
+    } catch (err) {
+      console.error('Server sync failed:', err);
+    }
+
+    setUserSaveSuccess(`${selectedUser.email} kullanıcısının bilgileri ve şifresi başarıyla güncellendi.`);
+    setUserSaveError(null);
+    setTimeout(() => setUserSaveSuccess(null), 3500);
+  };
+
+  const handleAdminSendResetEmail = async () => {
+    if (!selectedUser) return;
+    setIsSendingResetEmail(true);
+    setResetEmailFeedback(null);
+    try {
+      const res = await fetch('/api/auth/forgot-password/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: selectedUser.email,
+          smtpConfig: editedEmailConfig
+        })
+      });
+      const data = await res.json();
+      setResetEmailFeedback({
+        success: res.ok && data.success,
+        message: data.message || 'Şifre sıfırlama e-postası başarıyla gönderildi.'
+      });
+    } catch (err: any) {
+      setResetEmailFeedback({
+        success: false,
+        message: 'E-posta iletilemedi: ' + (err.message || 'Sunucu hatası')
+      });
+    } finally {
+      setIsSendingResetEmail(false);
+    }
+  };
+
+  const handleAdminDeleteUser = async (userToDelete: UserAccount) => {
+    if (!window.confirm(`${userToDelete.email} hesabını sistemden silmek istediğinize emin misiniz?`)) {
+      return;
+    }
+    deleteUserAccount(userToDelete.email);
+    setUsers((prev) => prev.filter((u) => u.email.toLowerCase() !== userToDelete.email.toLowerCase()));
+    if (selectedUser?.email.toLowerCase() === userToDelete.email.toLowerCase()) {
+      setSelectedUser(null);
+    }
+    try {
+      await fetch('/api/admin/user/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userToDelete.email })
+      });
+    } catch {
+      // offline fallback
+    }
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const q = userSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (u.name && u.name.toLowerCase().includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q)) ||
+      (u.id && u.id.toLowerCase().includes(q))
+    );
+  });
 
   const currentAdminPassword = settings.adminPassword || 'HelloWorld';
 
@@ -305,6 +491,22 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </button>
 
               <button
+                id="admin-tab-users"
+                onClick={() => {
+                  setActiveTab('users');
+                  refreshUsersList();
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === 'users'
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Kayıtlı Hesaplar ({users.length})</span>
+              </button>
+
+              <button
                 id="admin-tab-email"
                 onClick={() => setActiveTab('email_account')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -526,6 +728,373 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* TAB: Kayıtlı Kullanıcı Hesapları (Database) */}
+            {activeTab === 'users' && (
+              <div className="space-y-6">
+                {/* Header & Actions */}
+                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base font-bold text-stone-900">Veritabanında Kayıtlı Kullanıcı Hesapları</h2>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-900 text-white font-mono font-bold">
+                          {users.length} Hesap
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-500 mt-1">
+                        Sistemde kayıtlı öğrencilerin listesi. Bir hesabın şifresini veya bilgilerini değiştirmek için üzerine tıklayınız.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={refreshUsersList}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer"
+                        title="Listeyi Yenile"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Yenile</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {userSaveSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{userSaveSuccess}</span>
+                    </div>
+                  )}
+
+                  {/* Summary Metrics */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <span className="text-[11px] font-medium text-stone-500 block">Toplam Kayıtlı Kullanıcı</span>
+                      <span className="text-2xl font-bold text-stone-900 mt-1 block">{users.length}</span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <span className="text-[11px] font-medium text-stone-500 block">E-postası Doğrulanmış</span>
+                      <span className="text-2xl font-bold text-emerald-600 mt-1 block">
+                        {users.filter((u) => u.isVerified !== false).length}
+                      </span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <span className="text-[11px] font-medium text-stone-500 block">Aktif Takipçi Dersi</span>
+                      <span className="text-2xl font-bold text-stone-900 mt-1 block">{monitors.length}</span>
+                    </div>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative pt-2">
+                    <Search className="w-4 h-4 text-stone-400 absolute left-3 top-5" />
+                    <input
+                      id="admin-user-search-input"
+                      type="text"
+                      placeholder="Kullanıcı adı, e-posta veya ID ile ara..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white"
+                    />
+                  </div>
+
+                  {/* Users Table */}
+                  <div className="overflow-hidden border border-stone-200 rounded-xl mt-4">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-stone-50 text-stone-600 font-semibold border-b border-stone-200">
+                        <tr>
+                          <th className="py-3 px-4">Kullanıcı / Ad Soyad</th>
+                          <th className="py-3 px-4">E-posta Adresi</th>
+                          <th className="py-3 px-4">Şifre Durumu</th>
+                          <th className="py-3 px-4">Kayıt Tarihi</th>
+                          <th className="py-3 px-4 text-right">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {filteredUsers.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-12 text-center text-stone-400">
+                              <UserCheck className="w-8 h-8 text-stone-300 mx-auto mb-2" />
+                              <p className="font-medium text-stone-600">Kayıtlı kullanıcı bulunamadı.</p>
+                              <p className="text-[11px] text-stone-400 mt-1">
+                                {userSearch ? 'Arama kriterlerinize uygun hesap eşleşmedi.' : 'Henüz sisteme kayıt olan bir öğrenci bulunmuyor.'}
+                              </p>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredUsers.map((user) => (
+                            <tr
+                              key={user.id || user.email}
+                              onClick={() => handleSelectUser(user)}
+                              className="hover:bg-stone-50/80 cursor-pointer transition-colors group"
+                            >
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-full bg-stone-900 text-white font-bold flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
+                                    {(user.name || user.email || 'U').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-stone-900 leading-tight">
+                                      {user.name || 'İsimsiz Kullanıcı'}
+                                    </div>
+                                    <div className="text-[10px] text-stone-400 font-mono">
+                                      ID: {user.id ? user.id.slice(0, 14) : 'local'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-4">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-stone-800">{user.email}</span>
+                                  {user.isVerified !== false ? (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                                      <Check className="w-2.5 h-2.5" />
+                                      Onaylı
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
+                                      Onaysız
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-3 px-4 font-mono text-[11px]">
+                                {user.password ? (
+                                  <span className="inline-flex items-center gap-1 text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md text-[10px]">
+                                    <KeyRound className="w-3 h-3 text-stone-400" />
+                                    <span>••••••••</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-600 text-[10px]">Şifre Belirlenmemiş</span>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-4 text-stone-500 font-mono text-[11px]">
+                                {user.createdAt ? new Date(user.createdAt).toLocaleDateString('tr-TR') : 'Bilinmiyor'}
+                              </td>
+
+                              <td className="py-3 px-4 text-right">
+                                <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleSelectUser(user)}
+                                    className="px-2.5 py-1 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-900 hover:text-white rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Şifre / Düzenle
+                                  </button>
+                                  <button
+                                    onClick={() => handleAdminDeleteUser(user)}
+                                    title="Kullanıcıyı Sil"
+                                    className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* MODAL: Edit Selected Account & Password */}
+                {selectedUser && (
+                  <div
+                    id="admin-user-edit-modal-overlay"
+                    className="fixed inset-0 z-50 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+                    onClick={() => setSelectedUser(null)}
+                  >
+                    <div
+                      id="admin-user-edit-card"
+                      className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-stone-200 overflow-hidden my-8"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {/* Modal Header */}
+                      <div className="bg-stone-900 text-white px-6 py-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-stone-800 border border-stone-700 flex items-center justify-center">
+                            <Key className="w-4 h-4 text-amber-400" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold">Hesap ve Şifre Yönetimi</h3>
+                            <p className="text-[11px] text-stone-400 font-mono truncate max-w-xs">
+                              {selectedUser.email}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setSelectedUser(null)}
+                          className="p-1 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Modal Form */}
+                      <form onSubmit={handleSaveUserChanges} className="p-6 space-y-4">
+                        {userSaveSuccess && (
+                          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>{userSaveSuccess}</span>
+                          </div>
+                        )}
+
+                        {userSaveError && (
+                          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>{userSaveError}</span>
+                          </div>
+                        )}
+
+                        {resetEmailFeedback && (
+                          <div
+                            className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
+                              resetEmailFeedback.success
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                : 'bg-rose-50 border-rose-200 text-rose-800'
+                            }`}
+                          >
+                            {resetEmailFeedback.success ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            )}
+                            <span>{resetEmailFeedback.message}</span>
+                          </div>
+                        )}
+
+                        {/* Name Input */}
+                        <div>
+                          <label className="block text-xs font-semibold text-stone-800 mb-1">
+                            Öğrenci Adı Soyadı
+                          </label>
+                          <input
+                            type="text"
+                            value={editUserName}
+                            onChange={(e) => setEditUserName(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
+                            placeholder="Örn: Ahmet Can"
+                          />
+                        </div>
+
+                        {/* Email (Read-Only) */}
+                        <div>
+                          <label className="block text-xs font-semibold text-stone-800 mb-1">
+                            Kayıtlı E-posta Adresi
+                          </label>
+                          <input
+                            type="email"
+                            disabled
+                            value={selectedUser.email}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-100 text-stone-500 font-mono cursor-not-allowed"
+                          />
+                        </div>
+
+                        {/* Password Field & Controls */}
+                        <div className="p-4 rounded-xl bg-stone-50 border border-stone-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                              <Key className="w-3.5 h-3.5 text-stone-700" />
+                              <span>Hesap Şifresi (Görüntüle / Güncelle)</span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={handleGenerateRandomPassword}
+                              className="text-[11px] font-semibold text-stone-900 hover:underline cursor-pointer"
+                            >
+                              ⚡ Rastgele Şifre Üret
+                            </button>
+                          </div>
+
+                          <div className="relative">
+                            <input
+                              type={showPasswordInModal ? 'text' : 'password'}
+                              value={editUserPassword}
+                              onChange={(e) => setEditUserPassword(e.target.value)}
+                              placeholder="Kullanıcının yeni şifresini yazınız..."
+                              className="w-full pl-3 pr-10 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPasswordInModal(!showPasswordInModal)}
+                              className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-700"
+                              title={showPasswordInModal ? 'Şifreyi Gizle' : 'Şifreyi Göster'}
+                            >
+                              {showPasswordInModal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+
+                          <p className="text-[11px] text-stone-500">
+                            Buradan kullanıcının şifresini doğrudan değiştirebilir veya öğrenciye sıfırlama kodu gönderebilirsiniz.
+                          </p>
+
+                          {/* Quick Password Reset Email Trigger */}
+                          <div className="pt-2 border-t border-stone-200 flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-stone-600">
+                              Kullanıcının e-postasına sıfırlama bağlantısı gönder:
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isSendingResetEmail}
+                              onClick={handleAdminSendResetEmail}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-800 bg-white hover:bg-stone-100 border border-stone-300 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <Send className="w-3 h-3 text-stone-600" />
+                              <span>{isSendingResetEmail ? 'Gönderiliyor...' : 'Sıfırlama Maili Gönder'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Verified Toggle */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <input
+                            id="edit-user-verified"
+                            type="checkbox"
+                            checked={editUserVerified}
+                            onChange={(e) => setEditUserVerified(e.target.checked)}
+                            className="w-4 h-4 text-stone-900 rounded border-stone-300 focus:ring-stone-900"
+                          />
+                          <label htmlFor="edit-user-verified" className="text-xs font-medium text-stone-700 cursor-pointer">
+                            Hesap onaylı ve doğrulanmış (isVerified: true)
+                          </label>
+                        </div>
+
+                        {/* Modal Footer Buttons */}
+                        <div className="pt-4 border-t border-stone-100 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAdminDeleteUser(selectedUser)}
+                            className="px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hesabı Sil</span>
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUser(null)}
+                              className="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+                            >
+                              Kapat
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>Değişiklikleri Kaydet</span>
+                            </button>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

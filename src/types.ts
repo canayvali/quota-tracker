@@ -15,6 +15,7 @@ export interface QuotaHistoryEvent {
 export type AlertTriggerPreference = 'any_change' | 'seats_opened_only' | 'waitlist_or_seats';
 
 export type AppLanguage = 'tr' | 'en';
+export type AppTheme = 'light' | 'dark';
 
 export interface UserAccount {
   id: string;
@@ -23,6 +24,7 @@ export interface UserAccount {
   password?: string;
   isVerified?: boolean;
   preferredLanguage?: AppLanguage;
+  theme?: AppTheme;
   createdAt: string;
   lastLoginAt: string;
 }

@@ -1,4 +1,4 @@
-import { AppLanguage, ClassMonitor, EmailSenderConfig, GlobalSettings, UserAccount } from '../types';
+import { AppLanguage, AppTheme, ClassMonitor, EmailSenderConfig, GlobalSettings, UserAccount } from '../types';
 
 const STORAGE_KEY_MONITORS = 'crn_quota_monitors_v4';
 const STORAGE_KEY_SETTINGS = 'crn_quota_settings_v4';
@@ -6,6 +6,7 @@ const STORAGE_KEY_EMAIL_CONFIG = 'crn_quota_email_config_v4';
 const STORAGE_KEY_ADMIN_AUTH = 'crn_quota_admin_auth_v4';
 const STORAGE_KEY_USERS = 'crn_quota_users_v1';
 const STORAGE_KEY_CURRENT_USER = 'crn_quota_current_user_v1';
+const STORAGE_KEY_THEME = 'crn_quota_theme_v1';
 
 export const DEFAULT_QUOTA_SOURCE_URL = 'https://obs.itu.edu.tr/public/DersProgram';
 export const ADMIN_PASSWORD = 'HelloWorld';
@@ -92,6 +93,31 @@ export function updateUserPassword(email: string, newPassword: string): boolean 
     if (curr && curr.email.toLowerCase() === email.toLowerCase()) {
       curr.password = newPassword;
       saveCurrentUser(curr);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function updateUserAccount(email: string, updates: Partial<UserAccount>): boolean {
+  try {
+    const users = loadUsers();
+    const idx = users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (idx === -1) return false;
+
+    users[idx] = {
+      ...users[idx],
+      ...updates
+    };
+    saveUsers(users);
+
+    const curr = loadCurrentUser();
+    if (curr && curr.email.toLowerCase() === email.toLowerCase()) {
+      saveCurrentUser({
+        ...curr,
+        ...updates
+      });
     }
     return true;
   } catch {
@@ -243,5 +269,42 @@ export function setAdminAuth(authenticated: boolean): void {
     }
   } catch {
     // ignore
+  }
+}
+
+export function loadTheme(): AppTheme {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_THEME);
+    if (raw === 'dark' || raw === 'light') return raw;
+    return 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+export function saveTheme(theme: AppTheme): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_THEME, theme);
+  } catch {
+    // ignore
+  }
+}
+
+export function updateUserTheme(email: string, theme: AppTheme): boolean {
+  try {
+    const users = loadUsers();
+    const idx = users.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (idx !== -1) {
+      users[idx].theme = theme;
+      saveUsers(users);
+    }
+    const curr = loadCurrentUser();
+    if (curr && curr.email.toLowerCase() === email.toLowerCase()) {
+      curr.theme = theme;
+      saveCurrentUser(curr);
+    }
+    return true;
+  } catch {
+    return false;
   }
 }

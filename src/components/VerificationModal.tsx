@@ -264,19 +264,19 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     >
       <div
         id="verification-modal-card"
-        className="relative w-full max-w-sm sm:max-w-md bg-[#FAF9F5] border border-stone-200/90 rounded-2xl shadow-xl overflow-hidden text-stone-900 flex flex-col my-auto"
+        className="relative w-full max-w-sm sm:max-w-md bg-[#FAF9F5] dark:bg-[#1A1A1E] border border-stone-200/90 dark:border-stone-800 rounded-2xl shadow-xl overflow-hidden text-stone-900 dark:text-stone-100 flex flex-col my-auto transition-colors"
       >
         {/* Top Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-stone-200/80 bg-white">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-stone-200/80 dark:border-stone-800 bg-white dark:bg-[#1E1E24]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-stone-900 flex items-center justify-center text-white shadow-2xs">
+            <div className="w-9 h-9 rounded-xl bg-stone-900 dark:bg-stone-100 flex items-center justify-center text-white dark:text-stone-900 shadow-2xs">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-stone-900 tracking-tight">
+              <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 tracking-tight">
                 {t.verifyCodeTitle}
               </h3>
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-stone-500 dark:text-stone-400">
                 {t.verificationModalSubtitle}
               </p>
             </div>
@@ -285,7 +285,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
             id="close-verification-modal-btn"
             type="button"
             onClick={onClose}
-            className="p-1.5 text-stone-400 hover:text-stone-800 rounded-lg hover:bg-stone-100 transition-colors cursor-pointer"
+            className="p-1.5 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
             title={language === 'tr' ? 'Kapat ve Bilgileri Düzenle' : 'Close and Edit Info'}
           >
             <X className="w-5 h-5" />
@@ -295,33 +295,33 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
         {/* Content Body */}
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4">
           {/* Recipient Notification Box - Email placed strictly at the beginning */}
-          <div className="p-3 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-start gap-2.5">
-            <Mail className="w-4 h-4 text-stone-700 shrink-0 mt-0.5" />
-            <div className="text-xs leading-relaxed text-stone-600">
-              <strong className="font-bold text-stone-900 break-all">{email}</strong>{' '}
+          <div className="p-3 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/90 dark:border-stone-700 shadow-2xs flex items-start gap-2.5">
+            <Mail className="w-4 h-4 text-stone-700 dark:text-stone-300 shrink-0 mt-0.5" />
+            <div className="text-xs leading-relaxed text-stone-600 dark:text-stone-300">
+              <strong className="font-bold text-stone-900 dark:text-stone-100 break-all">{email}</strong>{' '}
               <span>{t.verifyCodeSentTo}</span>
             </div>
           </div>
 
           {/* Success Banner */}
           {successMsg && (
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span>{successMsg}</span>
             </div>
           )}
 
           {/* Error Banner */}
           {error && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
               <span>{error}</span>
             </div>
           )}
 
           {/* 6 Responsive Segmented OTP Inputs - Fluidly fitting all screen widths */}
           <div className="py-1">
-            <label className="block text-xs font-semibold text-stone-700 mb-2.5 text-center">
+            <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2.5 text-center">
               {t.verifyCodeLabel}
             </label>
             <div
@@ -340,7 +340,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                   autoComplete={idx === 0 ? 'one-time-code' : 'off'}
                   onChange={(e) => handleDigitChange(idx, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(idx, e)}
-                  className="flex-1 min-w-0 max-w-[46px] h-12 sm:h-14 text-center text-xl sm:text-2xl font-bold font-mono text-stone-900 bg-white border border-stone-300 rounded-xl focus:outline-none focus:border-stone-900 focus:ring-2 focus:ring-stone-900/10 transition-all shadow-2xs"
+                  className="flex-1 min-w-0 max-w-[46px] h-12 sm:h-14 text-center text-xl sm:text-2xl font-bold font-mono text-stone-900 dark:text-stone-100 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 rounded-xl focus:outline-none focus:border-stone-900 dark:focus:border-stone-400 focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 transition-all shadow-2xs"
                 />
               ))}
             </div>
@@ -353,8 +353,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
             disabled={!isCodeComplete || isLoading}
             className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${
               isCodeComplete && !isLoading
-                ? 'bg-stone-900 hover:bg-stone-800 text-white active:scale-[0.98]'
-                : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                ? 'bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-stone-200 text-white dark:text-stone-900 active:scale-[0.98]'
+                : 'bg-stone-200 dark:bg-stone-800 text-stone-400 dark:text-stone-600 cursor-not-allowed'
             }`}
           >
             {isLoading ? (
@@ -371,12 +371,12 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
           </button>
 
           {/* Resend and Edit Actions */}
-          <div className="flex items-center justify-between pt-2 text-xs border-t border-stone-200/80">
+          <div className="flex items-center justify-between pt-2 text-xs border-t border-stone-200/80 dark:border-stone-800">
             <button
               id="verification-change-details-btn"
               type="button"
               onClick={onClose}
-              className="text-stone-500 hover:text-stone-900 transition-colors flex items-center gap-1.5 py-1 font-medium cursor-pointer"
+              className="text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-colors flex items-center gap-1.5 py-1 font-medium cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>{t.btnChangeDetails}</span>
@@ -389,8 +389,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               disabled={resendCooldown > 0 || isLoading}
               className={`flex items-center gap-1.5 py-1 font-bold transition-colors cursor-pointer ${
                 resendCooldown > 0 || isLoading
-                  ? 'text-stone-400 cursor-not-allowed'
-                  : 'text-stone-900 hover:underline'
+                  ? 'text-stone-400 dark:text-stone-600 cursor-not-allowed'
+                  : 'text-stone-900 dark:text-stone-100 hover:underline'
               }`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />

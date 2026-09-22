@@ -5,11 +5,13 @@ import {
   Globe,
   KeyRound,
   LogOut,
+  Moon,
   ShieldCheck,
+  Sun,
   User,
   X
 } from 'lucide-react';
-import { AppLanguage, UserAccount } from '../types';
+import { AppLanguage, AppTheme, UserAccount } from '../types';
 import { PasswordInput } from './PasswordInput';
 import { updateUserPassword, deleteUserAccount } from '../utils/storage';
 import { TRANSLATIONS } from '../utils/translations';
@@ -24,6 +26,8 @@ interface ProfileModalProps {
   monitorsCount: number;
   language: AppLanguage;
   onChangeLanguage: (lang: AppLanguage) => void;
+  theme?: AppTheme;
+  onChangeTheme?: (theme: AppTheme) => void;
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({
@@ -34,7 +38,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onSignOut,
   monitorsCount,
   language,
-  onChangeLanguage
+  onChangeLanguage,
+  theme = 'light',
+  onChangeTheme
 }) => {
   const t = TRANSLATIONS[language];
 
@@ -176,12 +182,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       <div
         id="profile-modal-content"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden my-8"
+        className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden my-8"
       >
         {/* Modal Header */}
-        <div className="bg-stone-900 px-6 py-5 text-white flex items-center justify-between">
+        <div className="bg-stone-900 dark:bg-stone-950 px-6 py-5 text-white flex items-center justify-between border-b border-stone-800">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-stone-800 border border-stone-700 flex items-center justify-center text-sm font-bold text-emerald-400">
+            <div className="h-10 w-10 rounded-full bg-stone-800 dark:bg-stone-900 border border-stone-700 flex items-center justify-center text-sm font-bold text-emerald-400">
               {getInitials(currentUser.name)}
             </div>
             <div>
@@ -202,42 +208,78 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
         <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
           {/* User Information Card */}
-          <div className="bg-stone-50 rounded-xl border border-stone-200 p-4 space-y-3">
+          <div className="bg-stone-50 dark:bg-stone-800/60 rounded-xl border border-stone-200 dark:border-stone-700/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs text-stone-500 font-medium">
+              <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400 font-medium">
                 <User className="h-4 w-4 text-stone-400" />
                 <span>{t.profileName}</span>
               </div>
-              <span className="text-xs font-bold text-stone-900">{currentUser.name}</span>
+              <span className="text-xs font-bold text-stone-900 dark:text-stone-100">{currentUser.name}</span>
             </div>
 
-            <div className="flex items-center justify-between border-t border-stone-200/60 pt-2.5">
-              <div className="flex items-center gap-2 text-xs text-stone-500 font-medium">
-                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            <div className="flex items-center justify-between border-t border-stone-200/60 dark:border-stone-700/60 pt-2.5">
+              <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400 font-medium">
+                <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 <span>{t.profileEmail}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs font-mono font-semibold text-stone-900">{currentUser.email}</span>
-                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                <span className="text-xs font-mono font-semibold text-stone-900 dark:text-stone-100">{currentUser.email}</span>
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
                   {t.profileVerifiedBadge}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-stone-200/60 pt-2.5 text-xs">
-              <span className="text-stone-500">{t.profileCoursesCount}</span>
-              <span className="font-semibold text-stone-800">{monitorsCount} {t.profileCoursesSuffix}</span>
+            <div className="flex items-center justify-between border-t border-stone-200/60 dark:border-stone-700/60 pt-2.5 text-xs">
+              <span className="text-stone-500 dark:text-stone-400">{t.profileCoursesCount}</span>
+              <span className="font-semibold text-stone-800 dark:text-stone-200">{monitorsCount} {t.profileCoursesSuffix}</span>
             </div>
 
-            <div className="flex items-center justify-between border-t border-stone-200/60 pt-2.5 text-xs">
-              <span className="text-stone-500">{t.profileRegisteredAt}</span>
-              <span className="text-stone-700">{formattedJoinDate}</span>
+            <div className="flex items-center justify-between border-t border-stone-200/60 dark:border-stone-700/60 pt-2.5 text-xs">
+              <span className="text-stone-500 dark:text-stone-400">{t.profileRegisteredAt}</span>
+              <span className="text-stone-700 dark:text-stone-300">{formattedJoinDate}</span>
             </div>
+
+            {/* Appearance Preference Section in Profile */}
+            {onChangeTheme && (
+              <div className="border-t border-stone-200/60 dark:border-stone-700/60 pt-3 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  <Sun className="h-3.5 w-3.5 text-amber-500" />
+                  <span>{t.appearancePreference}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onChangeTheme('light')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 border-stone-400 dark:border-stone-500 shadow-xs'
+                        : 'bg-stone-100 dark:bg-stone-800/80 text-stone-600 dark:text-stone-400 border-transparent hover:border-stone-300'
+                    }`}
+                  >
+                    <Sun className="h-3.5 w-3.5 text-amber-500" />
+                    <span>{t.lightMode}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeTheme('dark')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      theme === 'dark'
+                        ? 'bg-stone-800 text-stone-100 border-stone-600 shadow-xs'
+                        : 'bg-stone-100 dark:bg-stone-800/80 text-stone-600 dark:text-stone-400 border-transparent hover:border-stone-300'
+                    }`}
+                  >
+                    <Moon className="h-3.5 w-3.5 text-indigo-400" />
+                    <span>{t.darkMode}</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Language Preference Section in Profile */}
-            <div className="border-t border-stone-200/60 pt-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700">
-                <Globe className="h-3.5 w-3.5 text-stone-500" />
+            <div className="border-t border-stone-200/60 dark:border-stone-700/60 pt-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700 dark:text-stone-300">
+                <Globe className="h-3.5 w-3.5 text-stone-500 dark:text-stone-400" />
                 <span>{t.profileLanguagePref}</span>
               </div>
               <LanguageSelector
@@ -249,29 +291,29 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
 
           {/* Change Password Section */}
-          <div className="space-y-4 pt-2 border-t border-stone-200">
-            <div className="flex items-center gap-2 text-sm font-bold text-stone-900">
-              <KeyRound className="h-4 w-4 text-stone-600" />
+          <div className="space-y-4 pt-2 border-t border-stone-200 dark:border-stone-800">
+            <div className="flex items-center gap-2 text-sm font-bold text-stone-900 dark:text-stone-100">
+              <KeyRound className="h-4 w-4 text-stone-600 dark:text-stone-400" />
               <h3>{t.changePasswordTitle}</h3>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700">
-                <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+              <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-2.5 text-xs text-red-700 dark:text-red-300">
+                <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
 
             {successMsg && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 text-xs text-emerald-800">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-start gap-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                 <span>{successMsg}</span>
               </div>
             )}
 
             <form onSubmit={handleChangePassword} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-stone-800 mb-1">
+                <label className="block text-xs font-semibold text-stone-800 dark:text-stone-200 mb-1">
                   {t.currentPasswordLabel}
                 </label>
                 <PasswordInput
@@ -284,7 +326,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-800 mb-1">
+                <label className="block text-xs font-semibold text-stone-800 dark:text-stone-200 mb-1">
                   {t.newPasswordLabel}
                 </label>
                 <PasswordInput
@@ -297,7 +339,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-800 mb-1">
+                <label className="block text-xs font-semibold text-stone-800 dark:text-stone-200 mb-1">
                   {t.confirmNewPasswordLabel}
                 </label>
                 <PasswordInput
@@ -313,7 +355,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 id="btn-update-password"
                 type="submit"
                 disabled={isLoading}
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 active:scale-98 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50 mt-1"
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 active:scale-98 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50 mt-1"
               >
                 {isLoading ? (
                   <span>{t.btnUpdatingPassword}</span>
@@ -328,7 +370,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
 
           {/* Account Actions: Logout & Delete Account */}
-          <div className="pt-4 border-t border-stone-200 flex items-center justify-between">
+          <div className="pt-4 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between">
             <button
               id="profile-logout-btn"
               type="button"
@@ -336,15 +378,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 onClose();
                 onSignOut();
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-stone-700 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-stone-700 dark:text-stone-300 hover:text-stone-900 dark:hover:text-stone-100 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors cursor-pointer"
             >
-              <LogOut className="h-3.5 w-3.5 text-stone-500" />
+              <LogOut className="h-3.5 w-3.5 text-stone-500 dark:text-stone-400" />
               <span>{t.btnLogout}</span>
             </button>
 
             {showDeleteConfirm ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-rose-600 font-semibold">{t.confirmDeletePrompt}</span>
+                <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold">{t.confirmDeletePrompt}</span>
                 <button
                   type="button"
                   onClick={handleDeleteAccount}
@@ -355,7 +397,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-2 py-1 text-xs text-stone-600 hover:text-stone-900 cursor-pointer"
+                  className="px-2 py-1 text-xs text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 cursor-pointer"
                 >
                   {t.btnCancel}
                 </button>
@@ -364,7 +406,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="text-xs text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
+                className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:underline cursor-pointer"
               >
                 {t.deleteAccountLink}
               </button>

@@ -127,29 +127,29 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
       <div
-        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-headline"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-stone-900 text-amber-400 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-lg bg-stone-900 dark:bg-stone-800 text-amber-400 flex items-center justify-center">
               <Search className="h-4 w-4" />
             </div>
             <div>
-              <h2 id="modal-headline" className="text-sm font-bold text-stone-900">
+              <h2 id="modal-headline" className="text-sm font-bold text-stone-900 dark:text-stone-100">
                 Track Class by CRN
               </h2>
-              <p className="text-xs text-stone-500">
-                Enter CRN • All details auto-gathered from <span className="font-mono text-stone-700">obs.itu.edu.tr</span>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                Enter CRN • All details auto-gathered from <span className="font-mono text-stone-700 dark:text-stone-300">obs.itu.edu.tr</span>
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+            className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
             aria-label="Close modal"
           >
             <X className="h-5 w-5" />
@@ -159,17 +159,17 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
         {/* Form Body: ONLY CRN requested! */}
         <form onSubmit={handleLookupAndTrack} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700">
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+            <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-2.5 text-xs text-red-700 dark:text-red-300">
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           {/* CRN Input Field (The only input required!) */}
           <div>
-            <label htmlFor="crn-input" className="block text-xs font-semibold text-stone-800 mb-1 flex items-center justify-between">
+            <label htmlFor="crn-input" className="block text-xs font-semibold text-stone-800 dark:text-stone-200 mb-1 flex items-center justify-between">
               <span>Course Reference Number (CRN) <span className="text-red-500">*</span></span>
-              <span className="text-[11px] text-stone-400 font-normal">5-digit code</span>
+              <span className="text-[11px] text-stone-400 dark:text-stone-500 font-normal">5-digit code</span>
             </label>
             <div className="relative">
               <input
@@ -183,9 +183,9 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
                   setCrn(e.target.value.replace(/\D/g, ''));
                   setError(null);
                 }}
-                className="w-full px-3.5 py-2.5 text-base font-mono font-bold tracking-wider rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                className="w-full px-3.5 py-2.5 text-base font-mono font-bold tracking-wider rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 dark:focus:ring-stone-100/10 focus:border-stone-900 dark:focus:border-stone-400"
               />
-              <div className="absolute right-3 top-3 text-[11px] text-stone-400 font-mono">
+              <div className="absolute right-3 top-3 text-[11px] text-stone-400 dark:text-stone-500 font-mono">
                 {crn.length}/5
               </div>
             </div>
@@ -193,7 +193,7 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
 
           {/* Sample Popular CRNs for quick testing */}
           <div>
-            <div className="text-[11px] text-stone-500 mb-1.5 flex items-center gap-1 font-medium">
+            <div className="text-[11px] text-stone-500 dark:text-stone-400 mb-1.5 flex items-center gap-1 font-medium">
               <Sparkles className="h-3 w-3 text-amber-500" />
               <span>Quick test samples from İTÜ OBS:</span>
             </div>
@@ -205,39 +205,39 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
                   onClick={() => handleSelectSample(s.crn)}
                   className={`px-2.5 py-1 text-xs rounded-lg border transition-all cursor-pointer ${
                     crn === s.crn
-                      ? 'bg-stone-900 text-white border-stone-900 font-semibold'
-                      : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                      ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 border-stone-900 dark:border-stone-100 font-semibold'
+                      : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'
                   }`}
                 >
                   <span className="font-mono font-bold mr-1">{s.crn}</span>
-                  <span className="text-[10px] text-stone-400">{s.label.split(' ')[0]}</span>
+                  <span className="text-[10px] text-stone-400 dark:text-stone-500">{s.label.split(' ')[0]}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Linked Account Email Info (Not asking for email—auto bound to account!) */}
-          <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 text-stone-600">
-              <Mail className="h-4 w-4 text-stone-400" />
+          <div className="p-3 bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/60 rounded-xl flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-stone-600 dark:text-stone-400">
+              <Mail className="h-4 w-4 text-stone-400 dark:text-stone-500" />
               <span>Notification destination:</span>
             </div>
-            <span className="font-semibold text-stone-900 font-mono text-[11px]">
+            <span className="font-semibold text-stone-900 dark:text-stone-100 font-mono text-[11px]">
               {currentUser.email}
             </span>
           </div>
 
           {/* Discovered Course Preview Banner */}
           {discoveredCourse && (
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 animate-in fade-in duration-200">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl space-y-1.5 animate-in fade-in duration-200">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Gathered from İTÜ OBS:</span>
               </div>
-              <div className="text-xs text-emerald-800 font-medium">
+              <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
                 <span className="font-mono font-bold">{discoveredCourse.courseCode}</span> — {discoveredCourse.courseTitle}
               </div>
-              <div className="text-[11px] text-emerald-700 flex flex-wrap gap-2">
+              <div className="text-[11px] text-emerald-700 dark:text-emerald-400 flex flex-wrap gap-2">
                 <span>Instructor: {discoveredCourse.instructor}</span>
                 <span>•</span>
                 <span>Quota: {discoveredCourse.enrolled}/{discoveredCourse.capacity}</span>
@@ -248,8 +248,8 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
           )}
 
           {/* Information Notice */}
-          <div className="p-3 bg-[#FAF9F5] border border-stone-200/80 rounded-xl text-xs text-stone-600 flex items-start gap-2">
-            <Globe className="h-4 w-4 text-stone-500 shrink-0 mt-0.5" />
+          <div className="p-3 bg-[#FAF9F5] dark:bg-stone-800/40 border border-stone-200/80 dark:border-stone-700/60 rounded-xl text-xs text-stone-600 dark:text-stone-400 flex items-start gap-2">
+            <Globe className="h-4 w-4 text-stone-500 dark:text-stone-400 shrink-0 mt-0.5" />
             <div className="text-[11px] leading-relaxed">
               Course title, department, instructor, classroom schedule, and real-time quota are gathered directly from <strong>obs.itu.edu.tr</strong> using this CRN.
             </div>
@@ -264,7 +264,7 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
                   onClose();
                   onOpenItuBrowser();
                 }}
-                className="text-xs text-stone-500 hover:text-stone-800 transition-colors cursor-pointer"
+                className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 transition-colors cursor-pointer"
               >
                 Browse OBS catalog →
               </button>
@@ -275,14 +275,14 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
                 type="button"
                 onClick={onClose}
                 disabled={isLoading}
-                className="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isLoading}
-                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 active:scale-95 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 active:scale-95 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
               >
                 {isLoading ? (
                   <>

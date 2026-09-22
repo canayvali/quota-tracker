@@ -75,10 +75,10 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
       <div
         id="itu-obs-browser-modal-card"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden my-6 flex flex-col max-h-[90vh]"
+        className="w-full max-w-5xl bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden my-6 flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="px-6 py-4 bg-stone-900 text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-stone-900 dark:bg-stone-950 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-amber-400 text-stone-950 font-extrabold flex items-center justify-center text-sm shadow-xs">
               İTÜ
@@ -111,7 +111,7 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
             <button
               onClick={onClose}
               aria-label="Close modal"
-              className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors"
+              className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>
@@ -119,19 +119,19 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
         </div>
 
         {/* Filter Toolbar: Education Level & Course Code Select Boxes */}
-        <div className="p-5 bg-[#FAF9F5] border-b border-stone-200/90 space-y-3">
+        <div className="p-5 bg-[#FAF9F5] dark:bg-stone-800/50 border-b border-stone-200/90 dark:border-stone-700/80 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Education Level Select Box */}
             <div>
-              <label htmlFor="select-edu-level" className="block text-xs font-semibold text-stone-700 mb-1 flex items-center gap-1.5">
-                <BookOpen className="h-3.5 w-3.5 text-stone-500" />
+              <label htmlFor="select-edu-level" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1 flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-stone-500 dark:text-stone-400" />
                 <span>Program Seviyesi (Education Level)</span>
               </label>
               <select
                 id="select-edu-level"
                 value={educationLevel}
                 onChange={(e) => setEducationLevel(e.target.value as ItuEducationLevel)}
-                className="w-full px-3 py-2 text-xs font-medium rounded-xl border border-stone-300 bg-white text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                className="w-full px-3 py-2 text-xs font-medium rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
               >
                 <option value="lisans">Lisans (Undergraduate)</option>
                 <option value="lisansustu">Lisansüstü (Graduate)</option>
@@ -140,15 +140,15 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
 
             {/* Course Code / Subject Select Box */}
             <div>
-              <label htmlFor="select-subject-code" className="block text-xs font-semibold text-stone-700 mb-1 flex items-center gap-1.5">
-                <Filter className="h-3.5 w-3.5 text-stone-500" />
+              <label htmlFor="select-subject-code" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1 flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-stone-500 dark:text-stone-400" />
                 <span>Ders Kodu (Course Code: CEV, ITB, BLG...)</span>
               </label>
               <select
                 id="select-subject-code"
                 value={selectedSubject}
                 onChange={(e) => setSelectedSubject(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-bold font-mono rounded-xl border border-stone-300 bg-white text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                className="w-full px-3 py-2 text-xs font-bold font-mono rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
               >
                 <option value="ALL">Tümü (All Course Codes)</option>
                 {ITU_SUBJECT_OPTIONS.map((sub) => (
@@ -161,13 +161,13 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
 
             {/* Student Alert Recipient Email (Auto-bound from user account) */}
             <div>
-              <span className="block text-xs font-semibold text-stone-700 mb-1 flex items-center justify-between">
+              <span className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1 flex items-center justify-between">
                 <span>Alert Notification Destination</span>
-                <span className="text-[10px] text-emerald-600 font-medium">Logged-in Account</span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Logged-in Account</span>
               </span>
-              <div className="w-full px-3 py-2 text-xs font-mono font-medium rounded-xl border border-stone-200 bg-stone-100/70 text-stone-700 flex items-center justify-between">
+              <div className="w-full px-3 py-2 text-xs font-mono font-medium rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100/70 dark:bg-stone-800 text-stone-700 dark:text-stone-300 flex items-center justify-between">
                 <span className="truncate">{defaultEmail}</span>
-                <span className="text-[10px] text-stone-400">Auto-sent</span>
+                <span className="text-[10px] text-stone-400 dark:text-stone-500">Auto-sent</span>
               </div>
             </div>
           </div>
@@ -175,13 +175,13 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
           {/* Search filter & Sync */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
             <div className="relative flex-1 w-full max-w-md">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-stone-400" />
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-stone-400 dark:text-stone-500" />
               <input
                 type="text"
                 placeholder="Filter by CRN (e.g. 10492), course title or instructor..."
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-300 bg-white placeholder:text-stone-400"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500"
               />
             </div>
 
@@ -189,12 +189,12 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
               <button
                 onClick={handleRefreshObs}
                 disabled={isRefreshing}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-300 text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors cursor-pointer"
               >
                 <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span>Sync with OBS</span>
               </button>
-              <span className="text-xs text-stone-500 font-medium">
+              <span className="text-xs text-stone-500 dark:text-stone-400 font-medium">
                 {filteredCourses.length} section{filteredCourses.length === 1 ? '' : 's'} found
               </span>
             </div>
@@ -203,10 +203,10 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
 
         {/* Table Content */}
         <div className="flex-1 overflow-y-auto p-5">
-          <div className="rounded-xl border border-stone-200 overflow-hidden shadow-2xs bg-white">
+          <div className="rounded-xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-2xs bg-white dark:bg-stone-900">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-stone-100/90 text-stone-700 font-semibold border-b border-stone-200 uppercase text-[10px] tracking-wider font-mono">
+                <thead className="bg-stone-100/90 dark:bg-stone-800/80 text-stone-700 dark:text-stone-300 font-semibold border-b border-stone-200 dark:border-stone-700 uppercase text-[10px] tracking-wider font-mono">
                   <tr>
                     <th className="py-2.5 px-3">CRN</th>
                     <th className="py-2.5 px-3">Ders Kodu</th>
@@ -219,10 +219,10 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
                     <th className="py-2.5 px-3 text-right">İşlem</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-stone-200 font-sans">
+                <tbody className="divide-y divide-stone-200 dark:divide-stone-800 font-sans">
                   {filteredCourses.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-stone-500 text-xs">
+                      <td colSpan={9} className="py-12 text-center text-stone-500 dark:text-stone-400 text-xs">
                         No courses found matching your criteria. Try changing the Education Level or Subject Code.
                       </td>
                     </tr>
@@ -235,42 +235,42 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
                       return (
                         <tr
                           key={c.crn}
-                          className={`hover:bg-stone-50/80 transition-colors ${
-                            isSeatOpen ? 'bg-emerald-50/30' : ''
+                          className={`hover:bg-stone-50/80 dark:hover:bg-stone-850 transition-colors ${
+                            isSeatOpen ? 'bg-emerald-50/30 dark:bg-emerald-950/20' : ''
                           }`}
                         >
-                          <td className="py-2.5 px-3 font-mono font-bold text-stone-900 whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-md bg-stone-900 text-amber-400 font-mono text-[11px]">
+                          <td className="py-2.5 px-3 font-mono font-bold text-stone-900 dark:text-stone-100 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded-md bg-stone-900 dark:bg-stone-800 text-amber-400 font-mono text-[11px]">
                               {c.crn}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 font-semibold text-stone-900 whitespace-nowrap font-mono">
+                          <td className="py-2.5 px-3 font-semibold text-stone-900 dark:text-stone-100 whitespace-nowrap font-mono">
                             {c.courseCode}
                           </td>
-                          <td className="py-2.5 px-3 font-medium text-stone-800 min-w-[180px]">
+                          <td className="py-2.5 px-3 font-medium text-stone-800 dark:text-stone-200 min-w-[180px]">
                             <div>{c.courseTitle}</div>
-                            <div className="text-[10px] text-stone-400 font-normal">
+                            <div className="text-[10px] text-stone-400 dark:text-stone-500 font-normal">
                               {c.building} • {c.teachingMethod}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 text-stone-600 whitespace-nowrap">
+                          <td className="py-2.5 px-3 text-stone-600 dark:text-stone-400 whitespace-nowrap">
                             {c.instructor}
                           </td>
-                          <td className="py-2.5 px-3 text-stone-600 whitespace-nowrap font-mono text-[11px]">
+                          <td className="py-2.5 px-3 text-stone-600 dark:text-stone-400 whitespace-nowrap font-mono text-[11px]">
                             {c.dayTime}
                           </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-stone-600">
+                          <td className="py-2.5 px-3 text-center font-mono text-stone-600 dark:text-stone-400">
                             {c.capacity}
                           </td>
-                          <td className="py-2.5 px-3 text-center font-mono text-stone-600">
+                          <td className="py-2.5 px-3 text-center font-mono text-stone-600 dark:text-stone-400">
                             {c.enrolled}
                           </td>
                           <td className="py-2.5 px-3 text-center font-mono font-bold">
                             <span
                               className={`px-2 py-0.5 rounded-full text-xs ${
                                 isSeatOpen
-                                  ? 'bg-emerald-100 text-emerald-800 font-extrabold animate-pulse'
-                                  : 'bg-stone-100 text-stone-600'
+                                  ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-extrabold animate-pulse'
+                                  : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
                               }`}
                             >
                               {c.remaining}
@@ -278,18 +278,18 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
                           </td>
                           <td className="py-2.5 px-3 text-right whitespace-nowrap">
                             {wasJustAdded ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-lg">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg">
                                 <Check className="h-3 w-3" /> Added!
                               </span>
                             ) : isAlreadyTracked ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200">
-                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 px-2.5 py-1 rounded-lg border border-stone-200 dark:border-stone-700">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                                 Tracking
                               </span>
                             ) : (
                               <button
                                 onClick={() => handleTrackClick(c)}
-                                className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 active:scale-95 transition-all shadow-xs cursor-pointer"
+                                className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-stone-900 dark:bg-emerald-600 text-white rounded-lg hover:bg-stone-800 dark:hover:bg-emerald-500 active:scale-95 transition-all shadow-xs cursor-pointer"
                               >
                                 <Plus className="h-3.5 w-3.5" />
                                 <span>Track Quota</span>
@@ -307,14 +307,14 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="px-6 py-3 border-t border-stone-200 bg-stone-50 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-stone-600">
+        <div className="px-6 py-3 border-t border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-900 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-stone-600 dark:text-stone-400">
           <span className="flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+            <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
             Direct integration with İTÜ OBS class schedule system (BLG, CEV, ITB, MAT, FIZ, etc.)
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 transition-colors cursor-pointer"
+            className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 dark:bg-stone-800 text-white hover:bg-stone-800 dark:hover:bg-stone-700 transition-colors cursor-pointer"
           >
             Done
           </button>

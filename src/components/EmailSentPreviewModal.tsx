@@ -33,7 +33,7 @@ export const EmailSentPreviewModal: React.FC<EmailSentPreviewModalProps> = ({
       <div
         id="email-sent-preview-card"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-stone-200 overflow-hidden my-8"
+        className="w-full max-w-xl bg-white dark:bg-[#1A1A1E] rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden my-8 transition-colors"
       >
         {/* Banner */}
         <div className="bg-emerald-600 px-6 py-4 text-white flex items-center justify-between">
@@ -51,58 +51,58 @@ export const EmailSentPreviewModal: React.FC<EmailSentPreviewModalProps> = ({
           <button
             onClick={onClose}
             aria-label="Close modal"
-            className="p-1 rounded-lg text-emerald-100 hover:text-white hover:bg-emerald-700/50 transition-colors"
+            className="p-1 rounded-lg text-emerald-100 hover:text-white hover:bg-emerald-700/50 transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Envelope Metadata */}
-        <div className="bg-stone-50 border-b border-stone-200 px-6 py-3.5 space-y-2 text-xs">
+        <div className="bg-stone-50 dark:bg-stone-850 border-b border-stone-200 dark:border-stone-800 px-6 py-3.5 space-y-2 text-xs">
           <div className="flex items-center justify-between">
-            <span className="text-stone-500 font-medium flex items-center gap-1.5">
+            <span className="text-stone-500 dark:text-stone-400 font-medium flex items-center gap-1.5">
               <Mail className="h-3.5 w-3.5 text-stone-400" /> From:
             </span>
-            <span className="font-mono text-stone-800 font-medium">
+            <span className="font-mono text-stone-800 dark:text-stone-200 font-medium">
               {senderConfig.senderName} &lt;{senderConfig.senderAddress}&gt;
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-stone-500 font-medium flex items-center gap-1.5">
+            <span className="text-stone-500 dark:text-stone-400 font-medium flex items-center gap-1.5">
               <User className="h-3.5 w-3.5 text-stone-400" /> To:
             </span>
-            <span className="font-mono text-stone-900 font-semibold bg-white px-2 py-0.5 rounded-sm border border-stone-200">
+            <span className="font-mono text-stone-900 dark:text-stone-100 font-semibold bg-white dark:bg-stone-800 px-2 py-0.5 rounded-sm border border-stone-200 dark:border-stone-700">
               {emailData.recipient}
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-stone-500 font-medium flex items-center gap-1.5">
+            <span className="text-stone-500 dark:text-stone-400 font-medium flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-stone-400" /> Sent:
             </span>
-            <span className="text-stone-700">
+            <span className="text-stone-700 dark:text-stone-300">
               {emailData.timestamp || new Date().toLocaleString()}
             </span>
           </div>
-          <div className="pt-1 border-t border-stone-200/60">
-            <span className="text-stone-500 font-medium">Subject: </span>
-            <span className="text-stone-900 font-semibold">{emailData.subject}</span>
+          <div className="pt-1 border-t border-stone-200/60 dark:border-stone-800">
+            <span className="text-stone-500 dark:text-stone-400 font-medium">Subject: </span>
+            <span className="text-stone-900 dark:text-stone-100 font-semibold">{emailData.subject}</span>
           </div>
         </div>
 
         {/* Email Body Content */}
-        <div className="p-6 bg-white">
-          <div className="rounded-xl border border-stone-200 p-5 bg-[#FAF9F5] font-sans text-xs leading-relaxed text-stone-800 whitespace-pre-wrap">
+        <div className="p-6 bg-white dark:bg-[#1A1A1E]">
+          <div className="rounded-xl border border-stone-200 dark:border-stone-800 p-5 bg-[#FAF9F5] dark:bg-stone-900 font-sans text-xs leading-relaxed text-stone-800 dark:text-stone-200 whitespace-pre-wrap">
             {emailData.body}
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-[11px] text-stone-500">
+          <div className="mt-4 flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400">
             <span className="flex items-center gap-1">
-              <Shield className="h-3 w-3 text-emerald-600" />
+              <Shield className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
               Automated delivery logged in monitor audit history
             </span>
             <button
               onClick={onClose}
-              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 transition-colors cursor-pointer"
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors cursor-pointer"
             >
               Done
             </button>
