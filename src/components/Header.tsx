@@ -296,23 +296,22 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* RIGHT SIDE: İTÜ OBS Tarayıcı & CRN Ekle only */}
         <div className="flex items-center gap-2 ml-auto" style={{ pointerEvents: 'auto' }}>
-          {/* İTÜ OBS Course Schedule Browser Button */}
+          {/* İTÜ OBS Course Schedule Browser Button - Hidden on mobile (< sm), shown on tablet/desktop */}
           <button
             id="itu-obs-browser-btn"
             onClick={onOpenItuObsModal}
             title={t.btnObsSchedule}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer border ${
+            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer border ${
               isDark
                 ? 'bg-amber-950/40 text-amber-300 border-amber-800/70 hover:bg-amber-900/50'
                 : 'bg-amber-50 text-amber-900 border-amber-300/80 hover:bg-amber-100'
             }`}
           >
             <BookOpen className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-            <span className="hidden sm:inline">{t.btnObsSchedule}</span>
-            <span className="sm:hidden">OBS</span>
+            <span>{t.btnObsSchedule}</span>
           </button>
 
-          {/* Add CRN Button: Seamlessly transforms between inline button and floating action pill on scroll */}
+          {/* Add CRN Button: Prominently shown on both mobile and desktop */}
           <motion.button
             id="add-crn-btn"
             layout

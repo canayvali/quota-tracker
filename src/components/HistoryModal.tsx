@@ -42,7 +42,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
               </h2>
             </div>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-              Historical record of seat changes and automated email alerts sent to {monitor.notificationEmail}
+              Historical record of seat changes and automated email alerts
             </p>
           </div>
           <button

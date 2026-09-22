@@ -9,6 +9,7 @@ interface MonitorCardProps {
   onSimulateDrop: (id: string) => void;
   onSimulateClaim: (id: string) => void;
   onSimulateCapacityIncrease: (id: string) => void;
+  onSimulateNewCrn?: (courseCode: string) => void;
   onTogglePause: (id: string) => void;
   onDelete: (id: string) => void;
   onViewHistory: (monitor: ClassMonitor) => void;
@@ -22,6 +23,7 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
   onSimulateDrop,
   onSimulateClaim,
   onSimulateCapacityIncrease,
+  onSimulateNewCrn,
   onTogglePause,
   onDelete,
   onViewHistory,
@@ -85,6 +87,11 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
               <span className="font-bold text-stone-900 dark:text-stone-100 text-base">
                 {monitor.courseCode}
               </span>
+              {monitor.trackedCourseCode && (
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
+                  {language === 'tr' ? `Ders: ${monitor.trackedCourseCode}` : `Code: ${monitor.trackedCourseCode}`}
+                </span>
+              )}
               <span
                 className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
                   monitor.status === 'active'
@@ -290,6 +297,26 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                     </div>
                     <span className="font-mono text-stone-500 dark:text-stone-400 font-bold ml-2">-1</span>
                   </button>
+
+                  {onSimulateNewCrn && (
+                    <button
+                      onClick={() => {
+                        onSimulateNewCrn(monitor.trackedCourseCode || monitor.courseCode);
+                        setShowSimulateMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-stone-700 dark:text-stone-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 hover:text-blue-900 dark:hover:text-blue-200 flex items-center justify-between border-t border-stone-100 dark:border-stone-700"
+                    >
+                      <div>
+                        <div className="font-semibold text-blue-800 dark:text-blue-400">
+                          {language === 'tr' ? 'Yeni CRN Açıldı' : 'New CRN Opened'}
+                        </div>
+                        <div className="text-[10px] text-stone-500 dark:text-stone-400">
+                          {language === 'tr' ? '"Yeni CRN Açıldı" e-posta testi' : 'Dispatches "New CRN" email'}
+                        </div>
+                      </div>
+                      <span className="font-mono text-blue-600 dark:text-blue-400 font-bold ml-2 text-xs">CRN+</span>
+                    </button>
+                  )}
                 </div>
               </>
             )}

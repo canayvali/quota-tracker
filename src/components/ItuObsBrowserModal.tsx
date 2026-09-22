@@ -18,16 +18,14 @@ interface ItuObsBrowserModalProps {
   isOpen: boolean;
   onClose: () => void;
   monitors: ClassMonitor[];
-  onTrackCourse: (course: ItuCourse, studentEmail: string) => void;
-  defaultEmail: string;
+  onTrackCourse: (course: ItuCourse) => void;
 }
 
 export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
   isOpen,
   onClose,
   monitors,
-  onTrackCourse,
-  defaultEmail
+  onTrackCourse
 }) => {
   const [educationLevel, setEducationLevel] = useState<ItuEducationLevel>('lisans');
   const [selectedSubject, setSelectedSubject] = useState<string>('BLG');
@@ -54,7 +52,7 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
   if (!isOpen) return null;
 
   const handleTrackClick = (course: ItuCourse) => {
-    onTrackCourse(course, defaultEmail);
+    onTrackCourse(course);
     setJustAddedCrn(course.crn);
     setTimeout(() => setJustAddedCrn(null), 2500);
   };
@@ -120,7 +118,7 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
 
         {/* Filter Toolbar: Education Level & Course Code Select Boxes */}
         <div className="p-5 bg-[#FAF9F5] dark:bg-stone-800/50 border-b border-stone-200/90 dark:border-stone-700/80 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Education Level Select Box */}
             <div>
               <label htmlFor="select-edu-level" className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1 flex items-center gap-1.5">
@@ -157,18 +155,6 @@ export const ItuObsBrowserModal: React.FC<ItuObsBrowserModalProps> = ({
                   </option>
                 ))}
               </select>
-            </div>
-
-            {/* Student Alert Recipient Email (Auto-bound from user account) */}
-            <div>
-              <span className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1 flex items-center justify-between">
-                <span>Alert Notification Destination</span>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Logged-in Account</span>
-              </span>
-              <div className="w-full px-3 py-2 text-xs font-mono font-medium rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-100/70 dark:bg-stone-800 text-stone-700 dark:text-stone-300 flex items-center justify-between">
-                <span className="truncate">{defaultEmail}</span>
-                <span className="text-[10px] text-stone-400 dark:text-stone-500">Auto-sent</span>
-              </div>
             </div>
           </div>
 

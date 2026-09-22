@@ -144,6 +144,50 @@ export interface TranslationDictionary {
   loggedOutToastDesc: string;
   languageChangedToastTitle: string;
   languageChangedToastDesc: string;
+
+  // Add CRN & Course Code Modal
+  modalAddTitle: string;
+  modalAddSubtitle: string;
+  tabByCrn: string;
+  tabByCourseCode: string;
+  crnInputLabel: string;
+  crnInputHint: string;
+  crnPlaceholder: string;
+  courseCodeInputLabel: string;
+  courseCodeInputHint: string;
+  courseCodePlaceholder: string;
+  courseCodeExplanation: string;
+  quickTestSamples: string;
+  quickCourseSamples: string;
+  notificationDestination: string;
+  deliveryFilterLabel: string;
+  deliveryFilterAll: string;
+  deliveryFilterFaceToFace: string;
+  deliveryFilterOnline: string;
+  deliveryFilterHint: string;
+  courseGroupLabel: string;
+  sectionsCount: string;
+  openSeatsInGroup: string;
+  allSectionsFull: string;
+  simulateNewCrnFaceToFace: string;
+  simulateNewCrnOnline: string;
+  mismatchFilterNotice: string;
+  gatheredFromObs: string;
+  instructorLabel: string;
+  quotaLabel: string;
+  remainingLabel: string;
+  infoNotice: string;
+  infoNoticeCourseCode: string;
+  btnBrowseObs: string;
+  btnTrackCrnSubmit: string;
+  btnTrackCourseCodeSubmit: string;
+  gatheringFromObsModal: string;
+  errorEnterCrn: string;
+  errorInvalidCrn: string;
+  errorEnterCourseCode: string;
+  errorNoCrnsFoundForCourse: string;
+  discoveredCrnsCount: string;
+  newCrnEmailNotice: string;
 }
 
 export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
@@ -211,7 +255,7 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     accountSettings: 'Hesap Ayarları',
 
     // Quick CRN Input Box
-    quickCrnPlaceholder: '5 haneli CRN giriniz (örn. 12486)',
+    quickCrnPlaceholder: '5 haneli CRN veya Ders Kodu giriniz',
     gatheringFromObs: 'İTÜ OBS Sorgulanıyor...',
     btnTrackCrn: 'CRN Takip Et',
     quickSamples: 'Örnek dersler',
@@ -224,7 +268,7 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     statsSourceWebPage: 'Resmi Kaynak',
 
     // Search and Filters
-    searchPlaceholder: 'CRN, ders kodu (örn. BLG 212E) veya ders adı ile ara...',
+    searchPlaceholder: 'CRN, ders kodu veya ders adı ile ara...',
     filterAll: 'Tüm Dersler',
     filterOpen: 'Kontenjanı Açıklar',
     filterFull: 'Dolu Dersler',
@@ -242,7 +286,7 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     step2Title: '2. Arka Planda Canlı Sorgulama',
     step2Desc: 'Takipçi, ders seçim yoğunluğunda sürekli sayfayı yenilemek zorunda kalmamanız için üniversitenin kontenjan sistemini düzenli aralıklarla sorgular.',
     step3Title: '3. Otomatik E-posta Bildirimi',
-    step3Desc: 'Kontenjan değiştiğinde (örneğin bir öğrenci dersi bıraktığında veya kontenjan arttırıldığında), doğrudan {email} adresinize anında bilgilendirme e-postası gönderilir.',
+    step3Desc: 'Kontenjan değiştiğinde (örneğin bir öğrenci dersi bıraktığında veya kontenjan arttırıldığında), anında bilgilendirme e-postası gönderilir.',
 
     // Card items
     statusSeatOpen: 'KONTENJAN AÇILDI!',
@@ -291,6 +335,50 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     loggedOutToastDesc: 'Başarıyla çıkış yaptınız.',
     languageChangedToastTitle: 'Dil Değiştirildi',
     languageChangedToastDesc: 'Uygulama dili Türkçe olarak güncellendi.',
+
+    // Add CRN & Course Code Modal (TR)
+    modalAddTitle: 'Ders / CRN Takibi Ekle',
+    modalAddSubtitle: 'CRN veya Ders Kodu girin • Tüm bilgiler obs.itu.edu.tr üzerinden anlık çekilir',
+    tabByCrn: 'Tekil CRN ile Takip',
+    tabByCourseCode: 'Ders Kodu ile Takip (Tüm Şubeler)',
+    crnInputLabel: 'Ders Referans Numarası (CRN)',
+    crnInputHint: '5 haneli kod',
+    crnPlaceholder: '5 haneli CRN kodunu giriniz',
+    courseCodeInputLabel: 'Ders Kodu',
+    courseCodeInputHint: 'Tüm şubeleri (CRN\'leri) kapsar',
+    courseCodePlaceholder: 'Ders kodunu giriniz (örn. MAT103E)',
+    courseCodeExplanation: 'Bu ders koduna ait İTÜ OBS\'deki tüm şubeler (CRN\'ler) otomatik tespit edilip takibe alınır. Herhangi birinde kontenjan açıldığında veya yeni bir CRN açıldığında e-posta bildirimi alırsınız.',
+    quickTestSamples: 'Popüler CRN örnekleri:',
+    quickCourseSamples: 'Popüler ders kodları:',
+    notificationDestination: 'Bildirim adresi:',
+    deliveryFilterLabel: 'Ders Veriliş Şekli / Filtre',
+    deliveryFilterAll: 'Tümü (Yüz Yüze & Çevrimiçi)',
+    deliveryFilterFaceToFace: 'Sadece Yüz Yüze',
+    deliveryFilterOnline: 'Sadece Çevrimiçi (Online)',
+    deliveryFilterHint: 'İTÜ OBS ders programında (Çevrimiçi) ibaresi bulunan dersler online kabul edilir. Yeni bir şube açıldığında da bu tercihe göre kontrol edilir.',
+    courseGroupLabel: 'Toplu Ders Takibi',
+    sectionsCount: 'Şube',
+    openSeatsInGroup: 'Boş Kontenjan',
+    allSectionsFull: 'Tüm Şubeler Dolu',
+    simulateNewCrnFaceToFace: 'Yeni CRN Açıldı (Yüz Yüze)',
+    simulateNewCrnOnline: 'Yeni CRN Açıldı (Çevrimiçi)',
+    mismatchFilterNotice: 'Açılan yeni şube seçtiğiniz filtreye ({filter}) uymadığı için bildirim gönderilmedi.',
+    gatheredFromObs: 'İTÜ OBS\'den Çekilen Bilgiler:',
+    instructorLabel: 'Öğretim Görevlisi',
+    quotaLabel: 'Kontenjan',
+    remainingLabel: 'Kalan Boş',
+    infoNotice: 'Ders adı, bölüm, hoca, derslik programı ve anlık kontenjan bu CRN kullanılarak doğrudan obs.itu.edu.tr adresinden çekilir.',
+    infoNoticeCourseCode: 'Bu ders kodunun İTÜ OBS\'deki tüm şubeleri anlık taranır. Kod altında yeni bir CRN açılırsa anında "Yeni CRN Açıldı" e-postası gönderilir.',
+    btnBrowseObs: 'OBS Kataloğunu Aç →',
+    btnTrackCrnSubmit: 'CRN Takip Et',
+    btnTrackCourseCodeSubmit: 'Dersi ve Tüm CRN\'leri Takip Et',
+    gatheringFromObsModal: 'İTÜ OBS taranıyor...',
+    errorEnterCrn: 'Lütfen 5 haneli bir CRN kodu giriniz.',
+    errorInvalidCrn: 'CRN 5 haneli bir sayı olmalıdır (Örn: 12486).',
+    errorEnterCourseCode: 'Lütfen bir ders kodu giriniz (Örn: CEV103 veya MAT103E).',
+    errorNoCrnsFoundForCourse: 'Bu ders koduna ait şube bulunamadı. Lütfen ders kodunu kontrol ediniz.',
+    discoveredCrnsCount: 'şube (CRN) tespit edildi ve takibe hazır.',
+    newCrnEmailNotice: 'Bu kod altında yeni bir CRN açıldığında özel bildirim e-postası gönderilecektir.'
   },
   en: {
     // Language names
@@ -356,10 +444,10 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     accountSettings: 'Account Settings',
 
     // Quick CRN Input Box
-    quickCrnPlaceholder: 'Enter 5-digit CRN (e.g. 12486)',
+    quickCrnPlaceholder: 'Enter 5-digit CRN or Course Code',
     gatheringFromObs: 'Gathering from İTÜ OBS...',
     btnTrackCrn: 'Track CRN',
-    quickSamples: 'Quick samples',
+    quickSamples: 'Sample courses',
     alertDestination: 'Alert destination',
 
     // Stats bar
@@ -369,7 +457,7 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     statsSourceWebPage: 'Source Web Page',
 
     // Search and Filters
-    searchPlaceholder: 'Search by CRN, code (e.g. BLG 212E), title...',
+    searchPlaceholder: 'Search by CRN, course code, or title...',
     filterAll: 'All Classes',
     filterOpen: 'Seats Open',
     filterFull: 'Full Only',
@@ -387,7 +475,7 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     step2Title: '2. Live Background Checking',
     step2Desc: 'The tracker continuously queries the university quota records without you having to repeatedly refresh during registration rush.',
     step3Title: '3. Automated Email Alert',
-    step3Desc: 'When a quota change occurs (e.g. a student drops and a seat opens), an alert is dispatched straight to {email}.',
+    step3Desc: 'When a quota change occurs (e.g. a student drops and a seat opens), an alert email is dispatched instantly.',
 
     // Card items
     statusSeatOpen: 'SEAT AVAILABLE RIGHT NOW!',
@@ -436,5 +524,49 @@ export const TRANSLATIONS: Record<AppLanguage, TranslationDictionary> = {
     loggedOutToastDesc: 'You have been signed out.',
     languageChangedToastTitle: 'Language Changed',
     languageChangedToastDesc: 'Application language set to English.',
+
+    // Add CRN & Course Code Modal (EN)
+    modalAddTitle: 'Add Class / CRN Tracker',
+    modalAddSubtitle: 'Enter CRN or Course Code • Auto-gathered directly from obs.itu.edu.tr',
+    tabByCrn: 'Track by Single CRN',
+    tabByCourseCode: 'Track by Course Code (All Sections)',
+    crnInputLabel: 'Course Reference Number (CRN)',
+    crnInputHint: '5-digit code',
+    crnPlaceholder: 'Enter 5-digit CRN',
+    courseCodeInputLabel: 'Course Code',
+    courseCodeInputHint: 'Covers all sections/CRNs',
+    courseCodePlaceholder: 'Enter course code (e.g. MAT103E)',
+    courseCodeExplanation: 'All sections (CRNs) under this course code in İTÜ OBS will be tracked. You will receive email alerts when any section opens a seat or if a new CRN is opened under this course.',
+    quickTestSamples: 'Popular CRN samples:',
+    quickCourseSamples: 'Popular course codes:',
+    notificationDestination: 'Notification address:',
+    deliveryFilterLabel: 'Teaching Delivery Mode / Filter',
+    deliveryFilterAll: 'All (In-Person & Online)',
+    deliveryFilterFaceToFace: 'In-Person Only',
+    deliveryFilterOnline: 'Online Only (Çevrimiçi)',
+    deliveryFilterHint: 'Sections with (Çevrimiçi) in their title or method in İTÜ OBS are considered online. New sections will also be checked against this preference.',
+    courseGroupLabel: 'Course Code Tracker',
+    sectionsCount: 'Sections',
+    openSeatsInGroup: 'Open Seats',
+    allSectionsFull: 'All Sections Full',
+    simulateNewCrnFaceToFace: 'New CRN Opened (In-Person)',
+    simulateNewCrnOnline: 'New CRN Opened (Online)',
+    mismatchFilterNotice: 'The newly opened section does not match your filter ({filter}); no alert email was dispatched.',
+    gatheredFromObs: 'Gathered from İTÜ OBS:',
+    instructorLabel: 'Instructor',
+    quotaLabel: 'Quota',
+    remainingLabel: 'Remaining',
+    infoNotice: 'Course title, department, instructor, schedule, and real-time quota are gathered directly from obs.itu.edu.tr using this CRN.',
+    infoNoticeCourseCode: 'All sections of this course code in İTÜ OBS will be polled. If a new CRN is opened under this code, you will immediately receive a "New CRN Opened" email alert.',
+    btnBrowseObs: 'Browse OBS catalog →',
+    btnTrackCrnSubmit: 'Track CRN',
+    btnTrackCourseCodeSubmit: 'Track Course & All CRNs',
+    gatheringFromObsModal: 'Gathering from İTÜ OBS...',
+    errorEnterCrn: 'Please enter a 5-digit CRN code.',
+    errorInvalidCrn: 'CRN must be a 5-digit number (e.g. 12486).',
+    errorEnterCourseCode: 'Please enter a course code (e.g. CEV103 or MAT103E).',
+    errorNoCrnsFoundForCourse: 'No sections found for this course code. Please verify the course code.',
+    discoveredCrnsCount: 'sections (CRNs) discovered and ready to track.',
+    newCrnEmailNotice: 'A dedicated email alert will be sent immediately if a new CRN opens under this course code.'
   }
 };

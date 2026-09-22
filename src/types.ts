@@ -1,7 +1,7 @@
 export interface QuotaHistoryEvent {
   id: string;
   timestamp: string;
-  type: 'increased' | 'decreased' | 'unchanged' | 'initial';
+  type: 'increased' | 'decreased' | 'unchanged' | 'initial' | 'new_crn_opened' | 'seat_dropped' | 'capacity_increased';
   oldAvailable: number;
   newAvailable: number;
   oldEnrolled: number;
@@ -29,6 +29,39 @@ export interface UserAccount {
   lastLoginAt: string;
 }
 
+export type TeachingModeFilter = 'all' | 'face_to_face' | 'online';
+
+export interface CourseGroupSection {
+  crn: string;
+  courseCode: string;
+  courseTitle: string;
+  instructor: string;
+  teachingMethod: string;
+  isOnline: boolean;
+  building?: string;
+  dayTime?: string;
+  capacity: number;
+  enrolled: number;
+  availableSeats: number;
+  lastChecked: string;
+}
+
+export interface TrackedCourseGroup {
+  id: string;
+  courseCode: string;
+  courseTitle: string;
+  userId: string;
+  email: string;
+  deliveryFilter: TeachingModeFilter; // 'all' | 'face_to_face' | 'online'
+  sections: CourseGroupSection[];
+  knownCrns: string[];
+  status: 'active' | 'paused';
+  createdAt: string;
+  lastChecked: string;
+  lastChanged?: string;
+  history?: QuotaHistoryEvent[];
+}
+
 export interface ClassMonitor {
   id: string;
   userId?: string;
@@ -52,6 +85,8 @@ export interface ClassMonitor {
   alertPreference: AlertTriggerPreference;
   checkIntervalSeconds: number;
   history: QuotaHistoryEvent[];
+  trackMode?: 'crn' | 'course_code';
+  trackedCourseCode?: string;
 }
 
 export interface EmailSenderConfig {

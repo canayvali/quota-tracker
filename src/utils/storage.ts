@@ -1,4 +1,4 @@
-import { AppLanguage, AppTheme, ClassMonitor, EmailSenderConfig, GlobalSettings, UserAccount } from '../types';
+import { AppLanguage, AppTheme, ClassMonitor, EmailSenderConfig, GlobalSettings, TrackedCourseGroup, UserAccount } from '../types';
 
 const STORAGE_KEY_MONITORS = 'crn_quota_monitors_v4';
 const STORAGE_KEY_SETTINGS = 'crn_quota_settings_v4';
@@ -7,6 +7,7 @@ const STORAGE_KEY_ADMIN_AUTH = 'crn_quota_admin_auth_v4';
 const STORAGE_KEY_USERS = 'crn_quota_users_v1';
 const STORAGE_KEY_CURRENT_USER = 'crn_quota_current_user_v1';
 const STORAGE_KEY_THEME = 'crn_quota_theme_v1';
+const STORAGE_KEY_COURSE_GROUPS = 'crn_quota_course_groups_v5';
 
 export const DEFAULT_QUOTA_SOURCE_URL = 'https://obs.itu.edu.tr/public/DersProgram';
 export const ADMIN_PASSWORD = 'HelloWorld';
@@ -316,5 +317,23 @@ export function updateUserTheme(email: string, theme: AppTheme): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function loadTrackedCourseGroups(): TrackedCourseGroup[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_COURSE_GROUPS);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveTrackedCourseGroups(groups: TrackedCourseGroup[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_COURSE_GROUPS, JSON.stringify(groups));
+  } catch {
+    // ignore
   }
 }

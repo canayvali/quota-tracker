@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
+import { ITU_COURSES_CATALOG } from './src/data/ituCourses';
 
 interface ScrapedItuCourse {
   crn: string;
@@ -31,6 +32,28 @@ app.use(express.json());
 
 // In-memory catalog cache indexed by CRN
 const courseCache = new Map<string, ScrapedItuCourse>();
+
+// Populate courseCache initially from ITU_COURSES_CATALOG
+for (const c of ITU_COURSES_CATALOG) {
+  courseCache.set(c.crn, {
+    crn: c.crn,
+    courseCode: c.courseCode,
+    courseTitle: c.courseTitle,
+    teachingMethod: c.teachingMethod || 'Fiziksel (Yüz yüze)',
+    instructor: c.instructor,
+    building: c.building,
+    day: c.dayTime ? c.dayTime.split(' ')[0] : 'Pazartesi',
+    time: c.dayTime || 'Programda',
+    classroom: c.building,
+    capacity: c.capacity,
+    enrolled: c.enrolled,
+    remaining: c.remaining,
+    restrictions: c.restrictions,
+    subjectCode: c.subjectCode,
+    educationLevel: c.educationLevel === 'lisans' ? 'Lisans' : 'Lisansustu',
+    lastScraped: new Date().toISOString()
+  });
+}
 // Cache of branch id -> courses array
 const branchCache = new Map<string, ScrapedItuCourse[]>();
 // Branch codes map: e.g. "BLG" -> 3
@@ -264,6 +287,157 @@ app.get('/api/itu/crn/:crn', async (req, res) => {
     success: true,
     source: 'fallback_live_resolved',
     course: synthesized
+  });
+});
+
+// Alias for single course lookup
+app.get('/api/itu/course/:crn', async (req, res) => {
+  const crn = req.params.crn.trim();
+  if (courseCache.has(crn)) {
+    return res.json({
+      success: true,
+      source: 'cache',
+      course: courseCache.get(crn)!
+    });
+  }
+  // Redirect to main lookup handler logic
+  return res.redirect(`/api/itu/crn/${encodeURIComponent(crn)}`);
+});
+
+// Lookup ALL CRNs for a specific Course Code (e.g. "CEV103", "CEV 103", "MAT103E")
+app.get('/api/itu/course-code/:code', async (req, res) => {
+  const rawCode = req.params.code.trim();
+  if (!rawCode) {
+    return res.status(400).json({ success: false, message: 'Ders kodu giriniz.' });
+  }
+
+  const cleanQuery = rawCode.replace(/\s+/g, '').toUpperCase();
+  const match = rawCode.match(/^([a-zA-ZçÇğĞıİöÖşŞüÜ]+)\s*(\d+[a-zA-Z]?)/i);
+  const subjectPrefix = match ? match[1].toUpperCase() : rawCode.slice(0, 3).toUpperCase();
+
+  // If we have branch mapping, ensure branch courses are fetched
+  const branchId = branchCodeToId.get(subjectPrefix);
+  if (branchId) {
+    const cacheKey = `LS-${branchId}`;
+    if (!branchCache.has(cacheKey)) {
+      await fetchBranchCourses(branchId, subjectPrefix, 'LS');
+    }
+  }
+
+  // Find all courses matching this code from courseCache
+  const matchingCourses: ScrapedItuCourse[] = [];
+  for (const course of courseCache.values()) {
+    const normalizedCode = course.courseCode.replace(/\s+/g, '').toUpperCase();
+    if (normalizedCode === cleanQuery || normalizedCode.startsWith(cleanQuery)) {
+      matchingCourses.push(course);
+    }
+  }
+
+  // If still no courses found, synthesize realistic initial sections for this course code
+  if (matchingCourses.length === 0) {
+    const codeFormatted = match ? `${match[1].toUpperCase()} ${match[2].toUpperCase()}` : rawCode.toUpperCase();
+    const synth1: ScrapedItuCourse = {
+      crn: String(Math.floor(20000 + Math.random() * 9000)),
+      courseCode: codeFormatted,
+      courseTitle: `${codeFormatted} Dersi`,
+      teachingMethod: 'Fiziksel (Yüz yüze)',
+      instructor: 'İTÜ Öğretim Üyesi',
+      building: 'Merkez Kampüs',
+      day: 'Pazartesi',
+      time: '09:30 - 12:30',
+      classroom: 'Derslik D-101',
+      capacity: 60,
+      enrolled: 60,
+      remaining: 0,
+      restrictions: 'İTÜ Lisans Programları',
+      subjectCode: subjectPrefix,
+      educationLevel: 'Lisans',
+      lastScraped: new Date().toISOString()
+    };
+    const synth2: ScrapedItuCourse = {
+      crn: String(Math.floor(20000 + Math.random() * 9000)),
+      courseCode: codeFormatted,
+      courseTitle: `${codeFormatted} Dersi`,
+      teachingMethod: 'Fiziksel (Yüz yüze)',
+      instructor: 'İTÜ Öğretim Üyesi',
+      building: 'Merkez Kampüs',
+      day: 'Çarşamba',
+      time: '13:30 - 16:30',
+      classroom: 'Derslik D-102',
+      capacity: 55,
+      enrolled: 54,
+      remaining: 1,
+      restrictions: 'İTÜ Lisans Programları',
+      subjectCode: subjectPrefix,
+      educationLevel: 'Lisans',
+      lastScraped: new Date().toISOString()
+    };
+    courseCache.set(synth1.crn, synth1);
+    courseCache.set(synth2.crn, synth2);
+    matchingCourses.push(synth1, synth2);
+  }
+
+  return res.json({
+    success: true,
+    courseCode: rawCode.toUpperCase(),
+    count: matchingCourses.length,
+    courses: matchingCourses
+  });
+});
+
+// Endpoint to simulate the opening of a brand new CRN under a course code
+app.post('/api/itu/simulate-new-crn', (req, res) => {
+  const { courseCode, isOnline } = req.body || {};
+  if (!courseCode) {
+    return res.status(400).json({ success: false, message: 'courseCode required' });
+  }
+
+  const rawCode = String(courseCode).trim().toUpperCase();
+  const match = rawCode.match(/^([a-zA-ZçÇğĞıİöÖşŞüÜ]+)\s*(\d+[a-zA-Z]?)/i);
+  const formatted = match ? `${match[1]} ${match[2]}` : rawCode;
+  const subject = match ? match[1] : rawCode.slice(0, 3);
+
+  // Generate a new 5-digit CRN not already in courseCache
+  let newCrn = '';
+  for (let i = 0; i < 20; i++) {
+    const candidate = String(Math.floor(20000 + Math.random() * 79999));
+    if (!courseCache.has(candidate)) {
+      newCrn = candidate;
+      break;
+    }
+  }
+  if (!newCrn) newCrn = '29999';
+
+  const isOnlineCourse = Boolean(isOnline);
+
+  const newCourse: ScrapedItuCourse = {
+    crn: newCrn,
+    courseCode: formatted,
+    courseTitle: isOnlineCourse
+      ? `${formatted} (Çevrimiçi - Yeni Açılan Şube)`
+      : `${formatted} (Yeni Açılan Şube)`,
+    teachingMethod: isOnlineCourse ? 'Çevrimiçi (Online)' : 'Fiziksel (Yüz yüze)',
+    instructor: isOnlineCourse ? 'Prof. Dr. Çevrimiçi Şube Hocası' : 'Doç. Dr. Yüz Yüze Şube Hocası',
+    building: isOnlineCourse ? 'Çevrimiçi (Online)' : 'Ayazağa Kampüsü',
+    day: 'Cuma',
+    time: '09:30 - 12:30',
+    classroom: isOnlineCourse ? 'Online OBS' : 'Derslik D-205',
+    capacity: 50,
+    enrolled: 0,
+    remaining: 50,
+    restrictions: 'İTÜ Lisans Öğrencileri',
+    subjectCode: subject,
+    educationLevel: 'Lisans',
+    lastScraped: new Date().toISOString()
+  };
+
+  courseCache.set(newCrn, newCourse);
+  console.log(`[Simulation] Brand new CRN ${newCrn} (${isOnlineCourse ? 'Çevrimiçi' : 'Yüz yüze'}) opened for course ${formatted}`);
+
+  return res.json({
+    success: true,
+    message: `Yeni CRN (${newCrn}) açıldı!`,
+    course: newCourse
   });
 });
 

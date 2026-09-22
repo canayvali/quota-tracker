@@ -134,6 +134,51 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
 
   // CEV - Environmental Engineering
   {
+    crn: '20101',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 103',
+    courseTitle: 'Çevre Mühendisliğine Giriş',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. İzzet Öztürk',
+    building: 'İNB D-101',
+    dayTime: 'Pazartesi 09:30 - 12:30',
+    capacity: 60,
+    enrolled: 60,
+    remaining: 0,
+    restrictions: 'Çevre Mühendisliği 1. Sınıf'
+  },
+  {
+    crn: '20102',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 103',
+    courseTitle: 'Çevre Mühendisliğine Giriş',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Ayşe Gül',
+    building: 'İNB D-102',
+    dayTime: 'Salı 13:30 - 16:30',
+    capacity: 60,
+    enrolled: 59,
+    remaining: 1,
+    restrictions: 'Çevre Mühendisliği 1. Sınıf'
+  },
+  {
+    crn: '20103',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 103',
+    courseTitle: 'Çevre Mühendisliğine Giriş',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Öğr. Üyesi Murat Toprak',
+    building: 'İNB D-104',
+    dayTime: 'Perşembe 10:30 - 13:30',
+    capacity: 55,
+    enrolled: 55,
+    remaining: 0,
+    restrictions: 'Çevre Mühendisliği 1. Sınıf'
+  },
+  {
     crn: '20194',
     subjectCode: 'CEV',
     courseCode: 'CEV 201',

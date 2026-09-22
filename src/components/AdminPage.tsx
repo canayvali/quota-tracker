@@ -23,7 +23,10 @@ import {
   Trash2,
   UserCheck,
   Users,
-  X
+  X,
+  Code2,
+  ExternalLink,
+  Globe
 } from 'lucide-react';
 import { ClassMonitor, EmailSenderConfig, GlobalSettings, QuotaHistoryEvent, UserAccount } from '../types';
 import { PasswordInput } from './PasswordInput';
@@ -44,7 +47,7 @@ interface AdminPageProps {
   onSetAdminAuthenticated: (auth: boolean) => void;
 }
 
-type AdminTab = 'trackers' | 'users' | 'email_account' | 'audit_logs' | 'security';
+type AdminTab = 'trackers' | 'users' | 'scraper' | 'email_account' | 'audit_logs' | 'security';
 
 export const AdminPage: React.FC<AdminPageProps> = ({
   onExit,
@@ -74,6 +77,23 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [emailConfigSavedToast, setEmailConfigSavedToast] = useState(false);
   const [testEmailRecipient, setTestEmailRecipient] = useState('ayvali@itu.edu.tr');
   const [testEmailSentToast, setTestEmailSentToast] = useState(false);
+
+  // Scraper Settings state (Source Scraper only configurable by Admins)
+  const [editedSettings, setEditedSettings] = useState<GlobalSettings>({ ...settings });
+  const [scraperSettingsSavedToast, setScraperSettingsSavedToast] = useState(false);
+  const [scraperTestCrn, setScraperTestCrn] = useState('11497');
+  const [isScraperTesting, setIsScraperTesting] = useState(false);
+  const [scraperTestResult, setScraperTestResult] = useState<{
+    success: boolean;
+    message: string;
+    data?: any;
+    durationMs?: number;
+  } | null>(null);
+  const [scraperTableFilter, setScraperTableFilter] = useState('');
+
+  useEffect(() => {
+    setEditedSettings({ ...settings });
+  }, [settings]);
 
   // Security password state
   const [newAdminPassword, setNewAdminPassword] = useState('');
@@ -331,6 +351,48 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     setTimeout(() => setPasswordChangeSuccess(false), 3500);
   };
 
+  const handleSaveScraperSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateSettings(editedSettings);
+    setScraperSettingsSavedToast(true);
+    setTimeout(() => setScraperSettingsSavedToast(false), 3500);
+  };
+
+  const handleTestScraper = async () => {
+    if (!scraperTestCrn.trim()) return;
+    setIsScraperTesting(true);
+    setScraperTestResult(null);
+    const startTime = Date.now();
+    try {
+      const res = await fetch(`/api/itu/course/${encodeURIComponent(scraperTestCrn.trim())}`);
+      const durationMs = Date.now() - startTime;
+      if (res.ok) {
+        const data = await res.json();
+        setScraperTestResult({
+          success: true,
+          message: `İTÜ OBS ayrıştırıcısı veriyi başarıyla getirdi (${durationMs}ms).`,
+          data,
+          durationMs
+        });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setScraperTestResult({
+          success: false,
+          message: err.error || err.message || `Sunucu HTTP ${res.status} hatası döndürdü.`,
+          durationMs
+        });
+      }
+    } catch (err: any) {
+      setScraperTestResult({
+        success: false,
+        message: err.message || 'Bağlantı hatası: Sunucuya ulaşılamadı.',
+        durationMs: Date.now() - startTime
+      });
+    } finally {
+      setIsScraperTesting(false);
+    }
+  };
+
   const handleCopyCrn = (crn: string) => {
     navigator.clipboard.writeText(crn);
     setCopiedId(crn);
@@ -504,6 +566,19 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               >
                 <UserCheck className="w-4 h-4" />
                 <span>Kayıtlı Hesaplar ({users.length})</span>
+              </button>
+
+              <button
+                id="admin-tab-scraper"
+                onClick={() => setActiveTab('scraper')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === 'scraper'
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                <Globe className="w-4 h-4" />
+                <span>Source Scraper & Kaynak ({monitors.length})</span>
               </button>
 
               <button
@@ -1095,6 +1170,348 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB: Source Scraper & Kaynak Ayarları */}
+            {activeTab === 'scraper' && (
+              <div className="space-y-6">
+                {/* Header Information & Configuration Card */}
+                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-6">
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                          <Globe className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-bold text-stone-900">
+                            İTÜ OBS Kaynak Tarayıcı & Parser Yapılandırması (Source Scraper)
+                          </h2>
+                          <p className="text-xs text-stone-500">
+                            Bu alan yalnızca yöneticiler tarafından yapılandırılabilir. Arka plan botunun İTÜ OBS web sayfalarını nasıl tarayacağını ve CRN tablosunu nasıl ayrıştıracağını belirler.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[11px] px-2.5 py-1 rounded-full bg-stone-100 text-stone-700 font-mono border border-stone-200">
+                        Admin Only Config
+                      </span>
+                    </div>
+                  </div>
+
+                  {scraperSettingsSavedToast && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        Tarayıcı (Source Scraper) yapılandırması başarıyla kaydedildi ve tüm sisteme uygulandı.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Scraper Configuration Form */}
+                  <form onSubmit={handleSaveScraperSettings} className="space-y-5">
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-800 mb-1">
+                        Hedef Kaynak Web Sayfası URL'si (Target Source URL)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Globe className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
+                          <input
+                            type="url"
+                            required
+                            value={editedSettings.defaultQuotaUrl}
+                            onChange={(e) =>
+                              setEditedSettings({ ...editedSettings, defaultQuotaUrl: e.target.value })
+                            }
+                            className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
+                            placeholder="https://obs.itu.edu.tr/public/DersProgram"
+                          />
+                        </div>
+                        {editedSettings.defaultQuotaUrl && (
+                          <a
+                            href={editedSettings.defaultQuotaUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+                            title="Resmi sayfayı yeni sekmede aç"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Sayfayı Aç</span>
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-stone-400 mt-1">
+                        Varsayılan resmi kaynak: <code className="font-mono bg-stone-100 px-1 py-0.5 rounded text-stone-700">https://obs.itu.edu.tr/public/DersProgram</code>
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-stone-100">
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-800 mb-1">
+                          Otomatik Arka Plan Taraması (Auto Polling)
+                        </label>
+                        <select
+                          value={editedSettings.autoRefreshActive ? 'active' : 'inactive'}
+                          onChange={(e) =>
+                            setEditedSettings({
+                              ...editedSettings,
+                              autoRefreshActive: e.target.value === 'active'
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white"
+                        >
+                          <option value="active">🟢 Aktif (Sürekli Arka Planda Takip Et)</option>
+                          <option value="inactive">🔴 Duraklatıldı (Manuel Kontrol)</option>
+                        </select>
+                        <p className="text-[10px] text-stone-400 mt-1">
+                          Aktif olduğunda sistem kullanıcıya sormadan arka planda dersleri sürekli takip eder.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-800 mb-1">
+                          Tarama Periyodu / Kontrol Sıklığı (Saniye)
+                        </label>
+                        <select
+                          value={editedSettings.autoRefreshInterval}
+                          onChange={(e) =>
+                            setEditedSettings({
+                              ...editedSettings,
+                              autoRefreshInterval: Number(e.target.value)
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white font-mono"
+                        >
+                          <option value={15}>15 saniyede bir (Ultra Hızlı)</option>
+                          <option value={30}>30 saniyede bir (Hızlı)</option>
+                          <option value={45}>45 saniyede bir (Önerilen Varsayılan)</option>
+                          <option value={60}>60 saniyede bir (1 Dakika)</option>
+                          <option value={120}>120 saniyede bir (2 Dakika)</option>
+                        </select>
+                        <p className="text-[10px] text-stone-400 mt-1">
+                          İTÜ sunucularına aşırı yük bindirmeden hızlı bildirim sağlamak için 45s önerilir.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditedSettings({
+                            ...editedSettings,
+                            defaultQuotaUrl: 'https://obs.itu.edu.tr/public/DersProgram',
+                            autoRefreshActive: true,
+                            autoRefreshInterval: 45
+                          })
+                        }
+                        className="px-3 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Varsayılana Sıfırla
+                      </button>
+
+                      <button
+                        id="btn-save-scraper-settings"
+                        type="submit"
+                        className="px-5 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Tarayıcı Ayarlarını Kaydet</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Live Scraper Test Bench */}
+                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                      <Code2 className="w-4 h-4 text-stone-700" />
+                      <span>Canlı Scraper Test Konsolu (Live Scraper Tester)</span>
+                    </h3>
+                    <p className="text-xs text-stone-500 mt-1">
+                      İTÜ OBS sunucularından anlık veri çekme ve HTML DOM ayrıştırma sürecini canlı test edin.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 max-w-lg">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={scraperTestCrn}
+                        onChange={(e) => setScraperTestCrn(e.target.value)}
+                        placeholder="Örn: 11497, 12486 veya 20194"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleTestScraper}
+                      disabled={isScraperTesting || !scraperTestCrn.trim()}
+                      className="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center justify-center gap-2 shrink-0"
+                    >
+                      {isScraperTesting ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Sorgulanıyor...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Canlı Sorgula</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {scraperTestResult && (
+                    <div
+                      className={`p-4 rounded-xl border text-xs space-y-2 ${
+                        scraperTestResult.success
+                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                          : 'bg-rose-50 border-rose-200 text-rose-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 font-bold">
+                        {scraperTestResult.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        )}
+                        <span>{scraperTestResult.message}</span>
+                      </div>
+
+                      {scraperTestResult.data && (
+                        <div className="bg-white p-3 rounded-lg border border-emerald-100 text-stone-800 space-y-1 font-mono text-[11px]">
+                          <div><strong className="font-sans text-stone-600">CRN:</strong> {scraperTestResult.data.crn}</div>
+                          <div><strong className="font-sans text-stone-600">Ders Kodu:</strong> {scraperTestResult.data.courseCode}</div>
+                          <div><strong className="font-sans text-stone-600">Ders Adı:</strong> {scraperTestResult.data.courseTitle || '-'}</div>
+                          <div><strong className="font-sans text-stone-600">Kapasite:</strong> {scraperTestResult.data.totalCapacity} | <strong className="font-sans text-stone-600">Kayıtlı:</strong> {scraperTestResult.data.enrolled} | <strong className="font-sans text-stone-600">Kalan Kontenjan:</strong> <span className={scraperTestResult.data.availableSeats > 0 ? 'text-emerald-600 font-bold' : 'text-stone-600 font-bold'}>{scraperTestResult.data.availableSeats}</span></div>
+                          <div><strong className="font-sans text-stone-600">Kaynak Motoru:</strong> <span className="bg-stone-100 px-1 py-0.5 rounded text-stone-700">{scraperTestResult.data.source || 'live_itu_obs'}</span></div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Live Extracted Table Preview (Moved from Footer) */}
+                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-stone-700" />
+                        <span>Ayrıştırılan CRN Kontenjan Tablosu (Source Web Page Table & CRN Parser)</span>
+                      </h3>
+                      <p className="text-xs text-stone-500 mt-1">
+                        Sistemde aktif olarak takip edilen ve web ayrıştırıcısı tarafından anlık kontrol edilen dersler.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2" />
+                        <input
+                          type="text"
+                          placeholder="CRN veya Ders Filtrele..."
+                          value={scraperTableFilter}
+                          onChange={(e) => setScraperTableFilter(e.target.value)}
+                          className="pl-8 pr-3 py-1 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 w-48 font-mono"
+                        />
+                      </div>
+                      <span className="text-xs text-stone-400 font-mono">
+                        {monitors.length} Kayıt
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-100 text-stone-700 font-semibold border-b border-stone-200 uppercase text-[10px] tracking-wider font-mono">
+                          <tr>
+                            <th className="py-2.5 px-3">CRN</th>
+                            <th className="py-2.5 px-3">Ders Kodu</th>
+                            <th className="py-2.5 px-3">Ders Adı</th>
+                            <th className="py-2.5 px-3 text-center">Kapasite</th>
+                            <th className="py-2.5 px-3 text-center">Kayıtlı</th>
+                            <th className="py-2.5 px-3 text-center">Kalan Boş</th>
+                            <th className="py-2.5 px-3">Durum</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-200 font-sans">
+                          {monitors.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-6 text-center text-stone-400 font-sans">
+                                Henüz takip edilen aktif bir CRN bulunmuyor.
+                              </td>
+                            </tr>
+                          ) : (
+                            monitors
+                              .filter((m) =>
+                                !scraperTableFilter ||
+                                m.crn.includes(scraperTableFilter) ||
+                                m.courseCode.toLowerCase().includes(scraperTableFilter.toLowerCase()) ||
+                                m.courseTitle.toLowerCase().includes(scraperTableFilter.toLowerCase())
+                              )
+                              .map((m) => {
+                                const isSeatOpen = m.availableSeats > 0;
+                                return (
+                                  <tr
+                                    key={m.id}
+                                    className={`hover:bg-stone-50 transition-colors ${
+                                      isSeatOpen ? 'bg-emerald-50/40 font-medium' : ''
+                                    }`}
+                                  >
+                                    <td className="py-2.5 px-3 font-mono font-bold text-stone-900">
+                                      {m.crn}
+                                    </td>
+                                    <td className="py-2.5 px-3 font-semibold text-stone-800">
+                                      {m.courseCode}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-stone-600 max-w-[200px] truncate">
+                                      {m.courseTitle}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center font-mono text-stone-600">
+                                      {m.totalCapacity}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center font-mono text-stone-600">
+                                      {m.enrolled}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-xs ${
+                                          isSeatOpen
+                                            ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                                            : 'bg-stone-100 text-stone-600'
+                                        }`}
+                                      >
+                                        {m.availableSeats}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3">
+                                      {isSeatOpen ? (
+                                        <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                          KONTENJAN AÇIK
+                                        </span>
+                                      ) : (
+                                        <span className="text-[11px] text-stone-500">DOLU</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-600 leading-relaxed">
+                    <strong className="text-stone-800">Tarayıcı motoru nasıl çalışır?</strong> Sistem arka planda belirlenen periyotta hedef İTÜ OBS web sayfasına HTTP isteği atar, HTML tablo satırları arasından <code className="bg-stone-200 px-1 py-0.5 rounded text-[11px] font-mono">CRN</code> hücresini eşleştirir, Kapasite ve Kayıtlı öğrenci sayılarını çıkarır. Eğer kontenjan sayısı artarsa, öğrencinin e-postasına anında bildirim gönderir.
+                  </div>
+                </div>
               </div>
             )}
 

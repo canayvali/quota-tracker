@@ -318,3 +318,82 @@ export function simulateCapacityIncrease(
   );
 }
 
+/**
+ * Generates an email notification specifically when a NEW CRN is opened
+ * under a tracked course code (e.g. CEV103).
+ */
+export function generateNewCrnEmailHtml(
+  courseCode: string,
+  courseTitle: string,
+  newCrn: string,
+  instructor: string,
+  capacity: number,
+  enrolled: number,
+  remaining: number,
+  targetUrl: string,
+  notificationEmail: string,
+  senderConfig: EmailSenderConfig,
+  language: AppLanguage = 'tr'
+): { subject: string; body: string } {
+  const now = new Date();
+  const dateStrTR = now.toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'medium' });
+  const dateStrEN = now.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'medium' });
+
+  if (language === 'en') {
+    const subject = `🔔 NEW CRN OPENED: ${courseCode} (CRN: ${newCrn}) - ITU OBS Alert`;
+    const body = `
+🔔 NEW CRN / SECTION OPENED!
+
+Hello,
+
+A brand new CRN (section) has just been opened in ITU OBS for the course you are tracking (${courseCode}):
+
+• Course Code: ${courseCode}
+• Course Title: ${courseTitle}
+• New Opened CRN: ${newCrn}
+• Instructor: ${instructor}
+• Total Capacity: ${capacity}
+• Enrolled: ${enrolled}
+• Available Seats: ${remaining}
+• Notification Time: ${dateStrEN}
+• OBS Course Schedule: ${targetUrl}
+
+⚡ ACTION RECOMMENDED: This new CRN has been automatically added to your active tracking list. Log into your ITU Student Information System (OBS) right away to register for this newly opened section before quota fills up!
+
+—
+ITU OBS Quota Alert System (${senderConfig.senderAddress})
+This notification was automatically sent for the student registered at ${notificationEmail}.
+    `.trim();
+
+    return { subject, body };
+  }
+
+  // Default Turkish
+  const subject = `🔔 YENİ CRN AÇILDI: ${courseCode} (CRN: ${newCrn}) - İTÜ OBS Kontenjan Bildirimi`;
+  const body = `
+🔔 YENİ CRN / ŞUBE AÇILDI!
+
+Merhaba,
+
+Takip ettiğiniz ${courseCode} dersi için İTÜ OBS sisteminde yeni bir CRN (şube) açılmıştır:
+
+• Ders Kodu: ${courseCode}
+• Ders Adı: ${courseTitle}
+• Yeni Açılan CRN: ${newCrn}
+• Öğretim Görevlisi: ${instructor}
+• Toplam Kontenjan: ${capacity}
+• Kayıtlı Öğrenci: ${enrolled}
+• Kalan Boş Kontenjan: ${remaining}
+• Bildirim Zamanı: ${dateStrTR}
+• OBS Ders Programı Sayfası: ${targetUrl}
+
+⚡ ÖNEMLİ: Bu yeni açılan CRN otomatik olarak takip listenize dahil edilmiş ve kontenjanı izlemeye alınmıştır. Kontenjan dolmadan hemen İTÜ Öğrenci Bilgi Sistemi'ne (OBS) giriş yaparak ders seçiminizi gerçekleştirebilirsiniz!
+
+—
+İTÜ OBS Kontenjan Uyarı Sistemi (${senderConfig.senderAddress})
+Bu bildirim ${notificationEmail} adresine kayıtlı öğrenci için otomatik olarak gönderilmiştir.
+  `.trim();
+
+  return { subject, body };
+}
+

@@ -1,6 +1,6 @@
 {
   "name": "Class Quota Tracker",
-  "description": "CRN-based class quota monitor with obs.itu.edu.tr integration and password-protected admin portal for university course registration.",
+  "description": "İTÜ CRN ve ders kodu bazlı kontenjan takip ve yeni açılan şube bildirim sistemi.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
