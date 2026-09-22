@@ -35,8 +35,20 @@ export const INITIAL_EMAIL_CONFIG: EmailSenderConfig = {
   notes: 'Brevo SMTP Relay configured for automated student quota dispatch.'
 };
 
-// No pre-existing users - all users sign up and verify with their own email
-export const INITIAL_USERS: UserAccount[] = [];
+// Default registered account for Ahmet Can Ayvalı
+export const DEFAULT_USER_ACCOUNT: UserAccount = {
+  id: 'usr-ahmet-can-ayvali',
+  name: 'Ahmet Can Ayvalı',
+  email: 'ahmetcanayvali@gmail.com',
+  password: 'password123',
+  isVerified: true,
+  preferredLanguage: 'tr',
+  theme: 'light',
+  createdAt: '2026-09-01T00:00:00.000Z',
+  lastLoginAt: new Date().toISOString()
+};
+
+export const INITIAL_USERS: UserAccount[] = [DEFAULT_USER_ACCOUNT];
 
 export function loadUsers(): UserAccount[] {
   try {
@@ -46,12 +58,12 @@ export function loadUsers(): UserAccount[] {
       return INITIAL_USERS;
     }
     const users: UserAccount[] = JSON.parse(raw);
-    // Ensure ahmetcanayvali@gmail.com is purged as requested
-    const filtered = users.filter((u) => u.email && u.email.toLowerCase() !== 'ahmetcanayvali@gmail.com');
-    if (filtered.length !== users.length) {
-      saveUsers(filtered);
+    // Ensure Ahmet Can Ayvalı's account is preserved in saved accounts list
+    if (!users.some((u) => u.email && u.email.toLowerCase() === DEFAULT_USER_ACCOUNT.email.toLowerCase())) {
+      users.unshift(DEFAULT_USER_ACCOUNT);
+      saveUsers(users);
     }
-    return filtered;
+    return users;
   } catch {
     return INITIAL_USERS;
   }
@@ -59,8 +71,7 @@ export function loadUsers(): UserAccount[] {
 
 export function saveUsers(users: UserAccount[]): void {
   try {
-    const filtered = users.filter((u) => u.email && u.email.toLowerCase() !== 'ahmetcanayvali@gmail.com');
-    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(filtered));
+    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
   } catch {
     // ignore
   }
@@ -69,15 +80,14 @@ export function saveUsers(users: UserAccount[]): void {
 export function loadCurrentUser(): UserAccount | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CURRENT_USER);
-    if (!raw) return null;
-    const user: UserAccount = JSON.parse(raw);
-    if (user.email && user.email.toLowerCase() === 'ahmetcanayvali@gmail.com') {
-      clearCurrentUser();
-      return null;
+    if (!raw) {
+      saveCurrentUser(DEFAULT_USER_ACCOUNT);
+      return DEFAULT_USER_ACCOUNT;
     }
+    const user: UserAccount = JSON.parse(raw);
     return user;
   } catch {
-    return null;
+    return DEFAULT_USER_ACCOUNT;
   }
 }
 

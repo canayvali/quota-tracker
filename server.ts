@@ -468,6 +468,18 @@ interface ServerUser {
 // In-memory user database
 const serverUsers = new Map<string, ServerUser>();
 
+// Pre-seed Ahmet Can Ayvalı's account
+const defaultPreSeededUser: ServerUser = {
+  id: 'usr-ahmet-can-ayvali',
+  name: 'Ahmet Can Ayvalı',
+  email: 'ahmetcanayvali@gmail.com',
+  password: 'password123',
+  isVerified: true,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  lastLoginAt: new Date().toISOString()
+};
+serverUsers.set(defaultPreSeededUser.email.toLowerCase(), defaultPreSeededUser);
+
 // Verification code store: email -> { code, name, expiresAt, attempts }
 interface VerificationRecord {
   code: string;
