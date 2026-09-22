@@ -49,18 +49,30 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header
-      className={`sticky top-0 z-30 transition-all duration-200 border-b ${
+      className={`sticky top-0 z-30 transition-all duration-300 ${
         isScrolled
-          ? 'bg-white/95 backdrop-blur-md border-stone-200/90 py-2 shadow-sm'
-          : 'bg-white border-stone-200/80 py-3 shadow-2xs'
+          ? 'bg-transparent border-transparent py-3 pointer-events-none shadow-none'
+          : 'bg-white border-b border-stone-200/80 py-3 shadow-2xs pointer-events-auto'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
-        {/* If Scrolled Down: Heading/Status is gone! Only Add CRN button remains! */}
+        {/* If Scrolled Down: Heading/Background is gone! Only Add CRN button remains! */}
         {!isScrolled ? (
           <>
-            {/* Left Side: Live Monitor Status */}
+            {/* Left Side: Top-Left Log Out Button & Live Monitor Status */}
             <div className="flex items-center gap-2.5">
+              {currentUser && onSignOut && (
+                <button
+                  id="top-left-logout-btn"
+                  onClick={onSignOut}
+                  title={`Log out of account (${currentUser.name || currentUser.email})`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 transition-colors shadow-2xs cursor-pointer"
+                >
+                  <LogOut className="h-3.5 w-3.5 text-rose-600" />
+                  <span>Log Out</span>
+                </button>
+              )}
+
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/70">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse" />
                 Live Monitor
@@ -84,15 +96,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-stone-100 text-stone-700 border border-stone-200">
                   <User className="h-3 w-3 text-stone-500" />
                   <span className="font-medium max-w-[120px] truncate">{currentUser.name}</span>
-                  {onSignOut && (
-                    <button
-                      onClick={onSignOut}
-                      title="Sign out of student account"
-                      className="ml-1 text-stone-400 hover:text-red-600 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="h-3 w-3" />
-                    </button>
-                  )}
                 </div>
               )}
 
@@ -187,12 +190,12 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </>
         ) : (
-          /* When Scrolled Down: Heading/Status is gone, ONLY Add CRN button remains! */
+          /* When Scrolled Down: Heading background is gone, ONLY Add CRN button remains visible! */
           <div className="w-full flex items-center justify-end">
             <button
               id="scrolled-add-crn-btn"
               onClick={onOpenAddModal}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 active:scale-95 transition-all shadow-md cursor-pointer animate-in fade-in zoom-in-95 duration-200"
+              className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-stone-900 text-white hover:bg-stone-800 active:scale-95 transition-all shadow-xl hover:shadow-2xl cursor-pointer animate-in fade-in zoom-in-95 duration-200"
             >
               <Plus className="h-4 w-4" />
               <span>Add CRN</span>

@@ -308,11 +308,11 @@ export const EmailSenderConfigModal: React.FC<EmailSenderConfigModalProps> = ({
           {/* Email Template Preview Drawer */}
           <div className="border border-stone-200 rounded-xl overflow-hidden">
             <div className="bg-stone-50 px-3 py-2 border-b border-stone-200 flex items-center justify-between text-xs">
-              <span className="font-semibold text-stone-700">Preview: Email Template Sent to Students</span>
+              <span className="font-semibold text-stone-700">Preview: Email Template (TR + EN)</span>
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(`🚨 SEAT OPENED: CRN 10492 - BLG 212E has 1 available seat!`);
+                  navigator.clipboard.writeText(`Kontenjan açıldı - Biri dersi bıraktı: CRN 10492 (BLG 212E)`);
                   setCopiedTemplate(true);
                   setTimeout(() => setCopiedTemplate(false), 2000);
                 }}
@@ -322,16 +322,18 @@ export const EmailSenderConfigModal: React.FC<EmailSenderConfigModalProps> = ({
                 <span>{copiedTemplate ? 'Copied' : 'Copy'}</span>
               </button>
             </div>
-            <div className="p-3 bg-white font-mono text-[11px] text-stone-700 leading-relaxed max-h-36 overflow-y-auto">
+            <div className="p-3 bg-white font-mono text-[11px] text-stone-700 leading-relaxed max-h-44 overflow-y-auto">
               <div className="text-stone-400 mb-1">From: {senderName} &lt;{senderAddress}&gt;</div>
-              <div className="text-stone-400 mb-2">Subject: 🚨 SEAT OPENED: CRN 10492 (BLG 212E) - Now 1 Available!</div>
-              <div className="p-2 bg-emerald-50/50 rounded-sm border border-emerald-100 text-emerald-900 mb-2">
-                A quota change was detected on your tracked class CRN 10492: 0 → 1 available seats!
-              </div>
-              <div className="text-stone-600">
-                Course: BLG 212E - Microprocessor Systems<br />
-                Enrolled: 49/50 • Seats Available: 1<br />
-                Action: Log in to registration portal immediately.
+              <div className="text-stone-800 font-semibold mb-2">Subject: Kontenjan açıldı - Biri dersi bıraktı: CRN 10492 (BLG 212E)</div>
+              <div className="p-2 bg-emerald-50/70 rounded-md border border-emerald-200/80 text-emerald-950 mb-2 whitespace-pre-line">
+                🔔 KONTENJAN AÇILDI - BİRİ DERSİ BIRAKTI{'\n'}
+                Merhaba, takip ettiğiniz derste bir öğrencinin dersi bırakması sonucu boş kontenjan açılmıştır:{'\n'}
+                • CRN: 10492 • BLG 212E - Microprocessor Systems{'\n'}
+                • Boş Kontenjan: 0 → 1 (+1 boş yer açıldı){'\n'}
+                ⚡ ÖNEMLİ: Kontenjan dolmadan hemen İTÜ OBS'ye giriş yapınız!{'\n\n'}
+                --- ENGLISH VERSION ---{'\n'}
+                🔔 SEAT OPENED - SOMEONE DROPPED THE CLASS{'\n'}
+                A student has dropped your tracked class and an open seat is now available. Log into OBS immediately!
               </div>
             </div>
           </div>

@@ -209,11 +209,9 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-stone-500">Trigger:</span>
+            <span className="text-stone-500">Bildirim:</span>
             <span className="text-[11px] text-stone-700 font-medium">
-              {monitor.alertPreference === 'any_change'
-                ? 'Any Quota Change (±)'
-                : 'Seats Opened Only (> 0)'}
+              Kontenjan Açılınca / Artınca
             </span>
           </div>
         </div>
@@ -227,13 +225,13 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
             className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 active:scale-95 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isChecking ? 'animate-spin' : ''}`} />
-            <span>{isChecking ? 'Checking...' : 'Check Now'}</span>
+            <span>{isChecking ? 'Kontrol Ediliyor...' : 'Şimdi Kontrol Et'}</span>
           </button>
 
           {/* View Audit & Email Log */}
           <button
             onClick={() => onViewHistory(monitor)}
-            title="View email alert delivery logs and history"
+            title="E-posta bildirim geçmişini ve olay kaydını görüntüle"
             className="p-2 text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
           >
             <History className="h-4 w-4" />
@@ -243,10 +241,10 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
           <div className="relative">
             <button
               onClick={() => setShowSimulateMenu(!showSimulateMenu)}
-              title="Simulate quota changes to test email dispatch"
+              title="E-posta bildirimini test etmek için olay simüle et"
               className="inline-flex items-center gap-1 px-2.5 py-2 text-xs font-medium text-stone-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer"
             >
-              <span>Test Quota</span>
+              <span>Test Et</span>
               <ChevronDown className="h-3 w-3" />
             </button>
 
@@ -256,39 +254,48 @@ export const MonitorCard: React.FC<MonitorCardProps> = ({
                   className="fixed inset-0 z-20"
                   onClick={() => setShowSimulateMenu(false)}
                 />
-                <div className="absolute right-0 bottom-full mb-1.5 w-48 rounded-xl bg-white border border-stone-200 shadow-lg py-1.5 z-30 text-xs">
+                <div className="absolute right-0 bottom-full mb-1.5 w-56 rounded-xl bg-white border border-stone-200 shadow-xl py-1.5 z-30 text-xs">
                   <div className="px-3 py-1 text-[10px] uppercase font-bold text-stone-400 tracking-wider">
-                    Simulate Live Event
+                    Olay Simülasyonu
                   </div>
                   <button
                     onClick={() => {
                       onSimulateDrop(monitor.id);
                       setShowSimulateMenu(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 text-stone-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 text-stone-700 hover:bg-emerald-50 hover:text-emerald-900 flex items-center justify-between"
                   >
-                    <span>Student Drops (+1 Open)</span>
-                    <span className="font-mono text-emerald-600 font-bold">+1</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      onSimulateClaim(monitor.id);
-                      setShowSimulateMenu(false);
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-stone-700 hover:bg-red-50 hover:text-red-800 flex items-center justify-between"
-                  >
-                    <span>Seat Claimed (-1 Open)</span>
-                    <span className="font-mono text-red-600 font-bold">-1</span>
+                    <div>
+                      <div className="font-semibold text-emerald-800">Biri Dersi Bıraktı</div>
+                      <div className="text-[10px] text-stone-500">"Kontenjan açıldı..." e-postası</div>
+                    </div>
+                    <span className="font-mono text-emerald-600 font-bold ml-2">+1</span>
                   </button>
                   <button
                     onClick={() => {
                       onSimulateCapacityIncrease(monitor.id);
                       setShowSimulateMenu(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 text-stone-700 hover:bg-amber-50 hover:text-amber-800 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 text-stone-700 hover:bg-amber-50 hover:text-amber-900 flex items-center justify-between border-t border-stone-100"
                   >
-                    <span>Dept Expands Quota</span>
-                    <span className="font-mono text-amber-700 font-bold">+5</span>
+                    <div>
+                      <div className="font-semibold text-amber-800">Kontenjan Arttırıldı</div>
+                      <div className="text-[10px] text-stone-500">"Kontenjan arttırıldı!" e-postası</div>
+                    </div>
+                    <span className="font-mono text-amber-700 font-bold ml-2">+5</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onSimulateClaim(monitor.id);
+                      setShowSimulateMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-stone-700 hover:bg-stone-50 hover:text-stone-900 flex items-center justify-between border-t border-stone-100 opacity-80"
+                  >
+                    <div>
+                      <div className="font-semibold text-stone-700">Ders Alındı (Kontenjan Düştü)</div>
+                      <div className="text-[10px] text-stone-400">E-posta gönderilmez</div>
+                    </div>
+                    <span className="font-mono text-stone-500 font-bold ml-2">-1</span>
                   </button>
                 </div>
               </>

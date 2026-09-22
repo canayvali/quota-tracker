@@ -416,7 +416,7 @@ export default function App() {
       .catch((err) => console.error('[Brevo SMTP Dispatch Error]:', err));
   };
 
-  // Simulation: Student Drops a seat (+1 Available)
+  // Simulation: Student Drops a seat (+1 Available) -> Kontenjan açıldı - Biri dersi bıraktı
   const handleSimulateDrop = (id: string) => {
     const target = monitors.find((m) => m.id === id);
     if (!target) return;
@@ -434,12 +434,13 @@ export default function App() {
         updatedMonitor,
         historyEvent.oldAvailable,
         historyEvent.newAvailable,
-        emailConfig
+        emailConfig,
+        'seat_dropped'
       );
       dispatchNotificationEmail(target.notificationEmail, historyEvent.emailSubject, body);
       showToast(
-        'SEAT OPENED! Email Dispatched',
-        `Quota changed (+1). Notification sent to ${target.notificationEmail} via ${emailConfig.senderAddress}.`,
+        'Kontenjan açıldı - Biri dersi bıraktı',
+        `E-posta bildirimi ${target.notificationEmail} adresine gönderildi.`,
         'alert'
       );
       setEmailPreviewData({
@@ -449,48 +450,30 @@ export default function App() {
         timestamp: new Date().toLocaleString()
       });
     } else {
-      showToast('Quota Updated', `Available seats changed: ${updatedMonitor.availableSeats}`, 'info');
+      showToast('Kontenjan Güncellendi', `Boş kontenjan: ${updatedMonitor.availableSeats}`, 'info');
     }
   };
 
-  // Simulation: Student Claims a seat (-1 Available)
+  // Simulation: Student Claims a seat (-1 Available) -> NO EMAIL SENT! (Rule: No emails for full quota or decrease of quota)
   const handleSimulateClaim = (id: string) => {
     const target = monitors.find((m) => m.id === id);
     if (!target) return;
 
-    const { updatedMonitor, emailSent, historyEvent } = simulateClaimSeat(
+    const { updatedMonitor } = simulateClaimSeat(
       target,
       emailConfig,
       settings.soundAlert
     );
 
     setMonitors((prev) => prev.map((m) => (m.id === id ? updatedMonitor : m)));
-
-    if (emailSent && historyEvent) {
-      const { body } = generateEmailHtml(
-        updatedMonitor,
-        historyEvent.oldAvailable,
-        historyEvent.newAvailable,
-        emailConfig
-      );
-      dispatchNotificationEmail(target.notificationEmail, historyEvent.emailSubject, body);
-      showToast(
-        'SEAT CLAIMED',
-        `Quota decreased (-1). Email notification dispatched to ${target.notificationEmail}.`,
-        'info'
-      );
-      setEmailPreviewData({
-        recipient: target.notificationEmail,
-        subject: historyEvent.emailSubject,
-        body,
-        timestamp: new Date().toLocaleString()
-      });
-    } else {
-      showToast('Quota Updated', `Available seats changed: ${updatedMonitor.availableSeats}`, 'info');
-    }
+    showToast(
+      'Kontenjan Güncellendi',
+      `Ders alındı: ${updatedMonitor.availableSeats} boş yer kaldı. (Azalma veya dolma için e-posta gönderilmez)`,
+      'info'
+    );
   };
 
-  // Simulation: Department increases capacity (+5 Available)
+  // Simulation: Department increases capacity (+5 Available) -> Kontenjan arttırıldı!
   const handleSimulateCapacityIncrease = (id: string) => {
     const target = monitors.find((m) => m.id === id);
     if (!target) return;
@@ -509,12 +492,14 @@ export default function App() {
         updatedMonitor,
         historyEvent.oldAvailable,
         historyEvent.newAvailable,
-        emailConfig
+        emailConfig,
+        'capacity_increase',
+        { oldCapacity: target.totalCapacity, newCapacity: target.totalCapacity + 5 }
       );
       dispatchNotificationEmail(target.notificationEmail, historyEvent.emailSubject, body);
       showToast(
-        'QUOTA EXPANDED! Email Dispatched',
-        `Department added +5 seats! Priority alert sent to ${target.notificationEmail}.`,
+        'Kontenjan arttırıldı!',
+        `Bölüm kontenjanı artırdı (+5). E-posta bildirimi ${target.notificationEmail} adresine iletildi.`,
         'alert'
       );
       setEmailPreviewData({
@@ -547,7 +532,7 @@ export default function App() {
       history: []
     };
 
-    const { subject, body } = generateEmailHtml(sampleMonitor, 0, 1, emailConfig);
+    const { subject, body } = generateEmailHtml(sampleMonitor, 0, 1, emailConfig, 'seat_dropped');
     const finalSubject = customSubject || `[TEST ALERT] ${subject}`;
 
     setEmailPreviewData({
@@ -1103,11 +1088,13 @@ export default function App() {
         monitor={selectedHistoryMonitor}
         onViewDispatchedEmail={(event) => {
           if (!selectedHistoryMonitor) return;
+          const isCap = event.notes?.includes('Kontenjan arttırıldı') || event.notes?.includes('capacity');
           const { body } = generateEmailHtml(
             selectedHistoryMonitor,
             event.oldAvailable,
             event.newAvailable,
-            emailConfig
+            emailConfig,
+            isCap ? 'capacity_increase' : 'seat_dropped'
           );
           setEmailPreviewData({
             recipient: event.emailRecipient,
