@@ -1,0 +1,388 @@
+import { ItuCourse } from '../types';
+
+export const ITU_OBS_URL = 'https://obs.itu.edu.tr/public/DersProgram';
+
+export interface SubjectOption {
+  code: string;
+  nameTr: string;
+  nameEn: string;
+  department: string;
+}
+
+export const ITU_SUBJECT_OPTIONS: SubjectOption[] = [
+  { code: 'BLG', nameTr: 'Bilgisayar Mühendisliği', nameEn: 'Computer Engineering', department: 'Bilgisayar ve Bilişim Fakültesi' },
+  { code: 'CEV', nameTr: 'Çevre Mühendisliği', nameEn: 'Environmental Engineering', department: 'İnşaat Fakültesi' },
+  { code: 'ITB', nameTr: 'İnsan ve Toplum Bilimleri', nameEn: 'Humanities & Social Sciences', department: 'Fen Edebiyat Fakültesi' },
+  { code: 'MAT', nameTr: 'Matematik', nameEn: 'Mathematics', department: 'Fen Edebiyat Fakültesi' },
+  { code: 'FIZ', nameTr: 'Fizik Mühendisliği', nameEn: 'Physics Engineering', department: 'Fen Edebiyat Fakültesi' },
+  { code: 'KIM', nameTr: 'Kimya', nameEn: 'Chemistry', department: 'Fen Edebiyat Fakültesi' },
+  { code: 'EHB', nameTr: 'Elektronik ve Haberleşme', nameEn: 'Electronics & Communication', department: 'Elektrik-Elektronik Fakültesi' },
+  { code: 'MAK', nameTr: 'Makina Mühendisliği', nameEn: 'Mechanical Engineering', department: 'Makina Fakültesi' },
+  { code: 'INS', nameTr: 'İnşaat Mühendisliği', nameEn: 'Civil Engineering', department: 'İnşaat Fakültesi' },
+  { code: 'END', nameTr: 'Endüstri Mühendisliği', nameEn: 'Industrial Engineering', department: 'İşletme Fakültesi' },
+  { code: 'YBS', nameTr: 'Yönetim Bilişim Sistemleri', nameEn: 'Management Information Systems', department: 'İşletme Fakültesi' },
+  { code: 'ING', nameTr: 'İngilizce / Yabancı Diller', nameEn: 'Foreign Languages', department: 'Yabancı Diller Yüksekokulu' }
+];
+
+export const ITU_COURSES_CATALOG: ItuCourse[] = [
+  // BLG - Computer Engineering
+  {
+    crn: '10492',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 212E',
+    courseTitle: 'Microprocessor Systems',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Öğr. Üyesi Ahmet Yılmaz',
+    building: 'EEB D-201',
+    dayTime: 'Pazartesi 09:30 - 12:30',
+    capacity: 50,
+    enrolled: 50,
+    remaining: 0,
+    restrictions: 'Sadece Bilgisayar Müh. ve Yapay Zeka Müh.'
+  },
+  {
+    crn: '10493',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 212E',
+    courseTitle: 'Microprocessor Systems',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Selin Erdem',
+    building: 'EEB D-204',
+    dayTime: 'Çarşamba 13:30 - 16:30',
+    capacity: 45,
+    enrolled: 44,
+    remaining: 1,
+    restrictions: 'Sadece Bilgisayar Müh.'
+  },
+  {
+    crn: '11503',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 223E',
+    courseTitle: 'Data Structures',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Tarkan Erdem',
+    building: 'EEB D-101',
+    dayTime: 'Salı 09:30 - 12:30',
+    capacity: 60,
+    enrolled: 60,
+    remaining: 0,
+    restrictions: 'Önşart: BLG 102E veya BLG 252E'
+  },
+  {
+    crn: '12419',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 252E',
+    courseTitle: 'Object Oriented Programming',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Öğr. Üyesi Caner Bozkurt',
+    building: 'EEB D-302',
+    dayTime: 'Perşembe 10:30 - 13:30',
+    capacity: 55,
+    enrolled: 53,
+    remaining: 2,
+    restrictions: 'Bilgisayar ve Bilişim Fakültesi'
+  },
+  {
+    crn: '13980',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 311E',
+    courseTitle: 'Formal Languages and Automata',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Eşref Adalı',
+    building: 'EEB D-102',
+    dayTime: 'Cuma 09:30 - 12:30',
+    capacity: 65,
+    enrolled: 65,
+    remaining: 0,
+    restrictions: 'Sadece 3. ve 4. sınıf öğrencileri'
+  },
+  {
+    crn: '14102',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 335E',
+    courseTitle: 'Analysis of Algorithms',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Berk Çelik',
+    building: 'EEB D-205',
+    dayTime: 'Salı 13:30 - 16:30',
+    capacity: 70,
+    enrolled: 70,
+    remaining: 0,
+    restrictions: 'Önşart: BLG 223E'
+  },
+  {
+    crn: '50104',
+    subjectCode: 'BLG',
+    courseCode: 'BLG 512E',
+    courseTitle: 'Advanced Computer Architecture',
+    educationLevel: 'lisansustu',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Mehmet Kaya',
+    building: 'Bilisim Ens. B-101',
+    dayTime: 'Pazartesi 18:00 - 21:00',
+    capacity: 30,
+    enrolled: 28,
+    remaining: 2,
+    restrictions: 'Lisansüstü Bilgisayar Müh.'
+  },
+
+  // CEV - Environmental Engineering
+  {
+    crn: '20194',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 201',
+    courseTitle: 'Çevre Mühendisliğine Giriş',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. İzzet Öztürk',
+    building: 'İNB D-103',
+    dayTime: 'Pazartesi 13:30 - 16:30',
+    capacity: 70,
+    enrolled: 70,
+    remaining: 0,
+    restrictions: 'Çevre Mühendisliği Bölümü'
+  },
+  {
+    crn: '20255',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 203E',
+    courseTitle: 'Environmental Chemistry I',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Ayşe Gül',
+    building: 'İNB D-202',
+    dayTime: 'Çarşamba 09:30 - 12:30',
+    capacity: 60,
+    enrolled: 59,
+    remaining: 1,
+    restrictions: 'Çevre Mühendisliği Bölümü'
+  },
+  {
+    crn: '20311',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 311',
+    courseTitle: 'Su Temini ve Uzaklaştırılması',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Erdem Görgün',
+    building: 'İNB D-301',
+    dayTime: 'Salı 14:30 - 17:30',
+    capacity: 55,
+    enrolled: 55,
+    remaining: 0,
+    restrictions: '3. ve 4. Sınıf Çevre Müh.'
+  },
+  {
+    crn: '20422',
+    subjectCode: 'CEV',
+    courseCode: 'CEV 411E',
+    courseTitle: 'Wastewater Treatment Design',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Öğr. Üyesi Murat Toprak',
+    building: 'İNB D-108',
+    dayTime: 'Perşembe 13:30 - 16:30',
+    capacity: 40,
+    enrolled: 40,
+    remaining: 0,
+    restrictions: 'Son Sınıf Lisans'
+  },
+
+  // ITB - Humanities & Social Sciences
+  {
+    crn: '31024',
+    subjectCode: 'ITB',
+    courseCode: 'ITB 003',
+    courseTitle: 'Felsefeye Giriş',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Öğr. Üyesi Deniz Demir',
+    building: 'MED-A101',
+    dayTime: 'Salı 09:30 - 12:30',
+    capacity: 85,
+    enrolled: 85,
+    remaining: 0,
+    restrictions: 'Tüm Lisans Programları'
+  },
+  {
+    crn: '31025',
+    subjectCode: 'ITB',
+    courseCode: 'ITB 017E',
+    courseTitle: 'Sociology of Science and Technology',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Hakan Yücel',
+    building: 'MED-A104',
+    dayTime: 'Çarşamba 13:30 - 16:30',
+    capacity: 75,
+    enrolled: 74,
+    remaining: 1,
+    restrictions: 'Tüm Lisans Programları'
+  },
+  {
+    crn: '31048',
+    subjectCode: 'ITB',
+    courseCode: 'ITB 020',
+    courseTitle: 'Fotoğraf ve Görsel Kültür',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Öğr. Gör. Murat Çakır',
+    building: 'MED-B202',
+    dayTime: 'Perşembe 14:30 - 17:30',
+    capacity: 60,
+    enrolled: 60,
+    remaining: 0,
+    restrictions: 'Tüm Lisans Programları'
+  },
+  {
+    crn: '31089',
+    subjectCode: 'ITB',
+    courseCode: 'ITB 086E',
+    courseTitle: 'World History & Civilization',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Emre Can',
+    building: 'MED-A201',
+    dayTime: 'Cuma 13:30 - 16:30',
+    capacity: 80,
+    enrolled: 78,
+    remaining: 2,
+    restrictions: 'Tüm Lisans Programları'
+  },
+
+  // MAT - Mathematics
+  {
+    crn: '21389',
+    subjectCode: 'MAT',
+    courseCode: 'MAT 201E',
+    courseTitle: 'Differential Equations',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Erkan Kara',
+    building: 'FEF D-101',
+    dayTime: 'Pazartesi 13:30 - 16:30',
+    capacity: 65,
+    enrolled: 64,
+    remaining: 1,
+    restrictions: 'Önşart: MAT 103E'
+  },
+  {
+    crn: '21390',
+    subjectCode: 'MAT',
+    courseCode: 'MAT 201E',
+    courseTitle: 'Differential Equations',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Berna Güler',
+    building: 'FEF D-104',
+    dayTime: 'Salı 09:30 - 12:30',
+    capacity: 65,
+    enrolled: 65,
+    remaining: 0,
+    restrictions: 'Önşart: MAT 103E'
+  },
+  {
+    crn: '21415',
+    subjectCode: 'MAT',
+    courseCode: 'MAT 103E',
+    courseTitle: 'Mathematics I (Calculus)',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Nurgül Aydın',
+    building: 'MED-A102',
+    dayTime: 'Pazartesi 08:30 - 11:30',
+    capacity: 100,
+    enrolled: 100,
+    remaining: 0,
+    restrictions: '1. Sınıf Lisans Öğrencileri'
+  },
+
+  // FIZ - Physics
+  {
+    crn: '30514',
+    subjectCode: 'FIZ',
+    courseCode: 'FIZ 102E',
+    courseTitle: 'Physics II (Electricity & Magnetism)',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Dr. Öğr. Üyesi Serhat Öztürk',
+    building: 'FEF F-102',
+    dayTime: 'Çarşamba 09:30 - 12:30',
+    capacity: 75,
+    enrolled: 75,
+    remaining: 0,
+    restrictions: 'Havuz Dersi'
+  },
+  {
+    crn: '30515',
+    subjectCode: 'FIZ',
+    courseCode: 'FIZ 102E',
+    courseTitle: 'Physics II (Electricity & Magnetism)',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Burak Tekin',
+    building: 'FEF F-105',
+    dayTime: 'Perşembe 13:30 - 16:30',
+    capacity: 70,
+    enrolled: 69,
+    remaining: 1,
+    restrictions: 'Havuz Dersi'
+  },
+
+  // KIM - Chemistry
+  {
+    crn: '41920',
+    subjectCode: 'KIM',
+    courseCode: 'KIM 101E',
+    courseTitle: 'General Chemistry I',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Bahar Kaya',
+    building: 'FEF K-101',
+    dayTime: 'Salı 13:30 - 16:30',
+    capacity: 80,
+    enrolled: 80,
+    remaining: 0,
+    restrictions: 'Havuz Dersi'
+  },
+
+  // EHB - Electronics
+  {
+    crn: '60124',
+    subjectCode: 'EHB',
+    courseCode: 'EHB 211E',
+    courseTitle: 'Basics of Electrical Circuits',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Ali Zeki',
+    building: 'EEB D-301',
+    dayTime: 'Pazartesi 13:30 - 16:30',
+    capacity: 65,
+    enrolled: 65,
+    remaining: 0,
+    restrictions: 'EHB ve KOM Bölümleri'
+  },
+
+  // MAK - Mechanical
+  {
+    crn: '70215',
+    subjectCode: 'MAK',
+    courseCode: 'MAK 201E',
+    courseTitle: 'Thermodynamics I',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Cemal Baykara',
+    building: 'MKB D-101',
+    dayTime: 'Çarşamba 09:30 - 12:30',
+    capacity: 90,
+    enrolled: 89,
+    remaining: 1,
+    restrictions: 'Makina Fakültesi'
+  }
+];
