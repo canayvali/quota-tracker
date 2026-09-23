@@ -225,16 +225,6 @@ export function loadEmailConfig(): EmailSenderConfig {
       return INITIAL_EMAIL_CONFIG;
     }
     const parsed = JSON.parse(raw);
-    if (
-      parsed.smtpHost === 'smtp.itu.edu.tr' ||
-      !parsed.smtpPassword ||
-      parsed.smtpPassword === '••••••••••••••••' ||
-      parsed.smtpPassword.startsWith('xsmtpsib-')
-    ) {
-      const updated = { ...INITIAL_EMAIL_CONFIG, ...parsed, smtpPassword: INITIAL_EMAIL_CONFIG.smtpPassword };
-      saveEmailConfig(updated);
-      return updated;
-    }
     return { ...INITIAL_EMAIL_CONFIG, ...parsed };
   } catch {
     return INITIAL_EMAIL_CONFIG;

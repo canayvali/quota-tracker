@@ -77,13 +77,21 @@ export async function authenticateUserAccount(email: string, passwordAttempt: st
       return null;
     }
 
-    // Update last login timestamp
-    await db
-      .update(users)
-      .set({ lastLoginAt: new Date() })
-      .where(eq(users.id, user.id));
+    // Determine correct onboarding status
+    const hasPrograms = Array.isArray(user.enrolledPrograms) && user.enrolledPrograms.length > 0;
+    const completedOnboarding = user.hasCompletedProgramOnboarding ?? (hasPrograms ? true : false);
 
-    return user;
+    // Update last login timestamp
+    const updated = await db
+      .update(users)
+      .set({
+        lastLoginAt: new Date(),
+        hasCompletedProgramOnboarding: completedOnboarding
+      })
+      .where(eq(users.id, user.id))
+      .returning();
+
+    return updated[0] || user;
   } catch (error) {
     console.error('Error in authenticateUserAccount:', error);
     throw new Error('Authentication query failed');
@@ -97,32 +105,51 @@ export async function getOrCreateUser(
   enrolledPrograms?: any,
   preferredLanguage = 'tr',
   theme = 'light',
-  hasCompletedProgramOnboarding = false,
+  hasCompletedProgramOnboarding?: boolean,
   password?: string
 ) {
   try {
     const normalizedEmail = email.trim().toLowerCase();
+    const existing = await getUserByEmail(normalizedEmail) || await getUserByUid(uid);
+
+    if (existing) {
+      const updates: any = {};
+      if (name !== undefined) updates.name = name;
+      if (password !== undefined) updates.password = password;
+      if (enrolledPrograms !== undefined) updates.enrolledPrograms = enrolledPrograms;
+      if (preferredLanguage !== undefined) updates.preferredLanguage = preferredLanguage;
+      if (theme !== undefined) updates.theme = theme;
+      if (hasCompletedProgramOnboarding !== undefined) {
+        updates.hasCompletedProgramOnboarding = hasCompletedProgramOnboarding;
+      } else if (enrolledPrograms && Array.isArray(enrolledPrograms) && enrolledPrograms.length > 0) {
+        updates.hasCompletedProgramOnboarding = true;
+      }
+      updates.lastLoginAt = new Date();
+
+      const updated = await db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, existing.id))
+        .returning();
+
+      return updated[0] || existing;
+    }
+
+    const determinedOnboarding = hasCompletedProgramOnboarding ?? (
+      enrolledPrograms && Array.isArray(enrolledPrograms) && enrolledPrograms.length > 0 ? true : false
+    );
+
     const result = await db
       .insert(users)
       .values({
-        uid,
+        uid: uid || 'usr-' + Date.now(),
         email: normalizedEmail,
         password: password || null,
         name: name || normalizedEmail.split('@')[0],
         enrolledPrograms: enrolledPrograms || [],
         preferredLanguage,
         theme,
-        hasCompletedProgramOnboarding,
-      })
-      .onConflictDoUpdate({
-        target: users.uid,
-        set: {
-          email: normalizedEmail,
-          ...(password ? { password } : {}),
-          ...(name ? { name } : {}),
-          ...(enrolledPrograms ? { enrolledPrograms } : {}),
-          lastLoginAt: new Date(),
-        },
+        hasCompletedProgramOnboarding: determinedOnboarding,
       })
       .returning();
 

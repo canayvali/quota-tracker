@@ -27,6 +27,18 @@ export async function getAllActiveMonitors() {
   }
 }
 
+export async function getAllMonitors() {
+  try {
+    return await db
+      .select()
+      .from(monitors)
+      .orderBy(desc(monitors.createdAt));
+  } catch (error) {
+    console.error('Error in getAllMonitors:', error);
+    return [];
+  }
+}
+
 export async function saveMonitor(data: typeof monitors.$inferInsert) {
   try {
     const result = await db
@@ -105,6 +117,18 @@ export async function getAllActiveTrackedGroups() {
       .where(eq(trackedCourseGroups.status, 'active'));
   } catch (error) {
     console.error('Error in getAllActiveTrackedGroups:', error);
+    return [];
+  }
+}
+
+export async function getAllTrackedGroups() {
+  try {
+    return await db
+      .select()
+      .from(trackedCourseGroups)
+      .orderBy(desc(trackedCourseGroups.createdAt));
+  } catch (error) {
+    console.error('Error in getAllTrackedGroups:', error);
     return [];
   }
 }

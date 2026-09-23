@@ -20,11 +20,13 @@ import {
 import {
   getUserMonitors,
   getAllActiveMonitors,
+  getAllMonitors,
   saveMonitor,
   updateMonitorQuota,
   deleteMonitor,
   getUserTrackedGroups,
   getAllActiveTrackedGroups,
+  getAllTrackedGroups,
   saveTrackedGroup,
   updateTrackedGroupSections,
   deleteTrackedGroup,
@@ -507,34 +509,210 @@ let activeServerSmtpConfig: {
   senderName?: string;
 } | null = null;
 
-function createTransporter(customConfig?: {
-  host?: string;
-  port?: number;
-  user?: string;
-  pass?: string;
-}) {
-  const host = customConfig?.host || activeServerSmtpConfig?.smtpHost || BREVO_SMTP_DEFAULTS.host;
-  const port = customConfig?.port || activeServerSmtpConfig?.smtpPort || BREVO_SMTP_DEFAULTS.port;
-  const user = customConfig?.user || activeServerSmtpConfig?.smtpUsername || BREVO_SMTP_DEFAULTS.user;
-  let pass = customConfig?.pass || activeServerSmtpConfig?.smtpPassword || BREVO_SMTP_DEFAULTS.pass;
+// Helper: Send email via Brevo HTTPS REST API (Port 443 - never blocked by cloud firewalls)
+async function sendViaBrevoHttpApi(apiKey: string, options: {
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  senderName: string;
+  senderAddress: string;
+  replyTo?: string;
+}): Promise<{ success: boolean; messageId?: string; message: string }> {
+  try {
+    const payload: any = {
+      sender: {
+        name: options.senderName || 'İTÜ OBS Quota Alert System',
+        email: options.senderAddress || BREVO_SMTP_DEFAULTS.user
+      },
+      to: [{ email: options.to }],
+      subject: options.subject,
+      htmlContent: options.html || (options.text ? options.text.replace(/\n/g, '<br/>') : ''),
+      textContent: options.text || ''
+    };
 
-  // If old expired or revoked Brevo key is passed from stale client storage, use active credentials
-  if (!pass || pass.startsWith('xsmtpsib-') || pass === '••••••••••••••••') {
+    if (options.replyTo) {
+      payload.replyTo = { email: options.replyTo };
+    }
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'api-key': apiKey
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (response.ok && data.messageId) {
+      return {
+        success: true,
+        messageId: data.messageId,
+        message: `Delivered via Brevo HTTPS API (messageId: ${data.messageId})`
+      };
+    } else {
+      throw new Error(data.message || JSON.stringify(data));
+    }
+  } catch (err: any) {
+    throw new Error(`Brevo REST API error: ${err.message}`);
+  }
+}
+
+// Unified Failsafe Outgoing Mail Dispatcher
+// 1. Tries primary SMTP (Port 587 / configured)
+// 2. Cascades to Port 465 (SMTPS) or 2525 if connection fails or times out
+// 3. Handles unverified sender address by switching from to authenticated user with reply-to
+// 4. Falls back to Brevo HTTPS REST API if key is available
+async function sendOutgoingEmail(options: {
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+  smtpConfig?: {
+    smtpHost?: string;
+    smtpPort?: number;
+    smtpUsername?: string;
+    smtpPassword?: string;
+    senderAddress?: string;
+    senderName?: string;
+  };
+}): Promise<{ success: boolean; messageId?: string; message: string; methodUsed?: string }> {
+  const config = options.smtpConfig || activeServerSmtpConfig || {};
+  const host = config.smtpHost || BREVO_SMTP_DEFAULTS.host;
+  let rawPort = config.smtpPort || BREVO_SMTP_DEFAULTS.port;
+  const user = config.smtpUsername || BREVO_SMTP_DEFAULTS.user;
+  let pass = config.smtpPassword || BREVO_SMTP_DEFAULTS.pass;
+
+  // Resolve password if placeholder or outdated key is passed
+  if (!pass || pass === '••••••••••••••••') {
     pass = process.env.SMTP_PASS || 'bskD981CTehLLJb';
   }
 
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure: Number(port) === 465,
-    auth: {
-      user,
-      pass,
-    },
-    tls: {
-      rejectUnauthorized: false
+  const senderName = config.senderName || 'İTÜ OBS Quota Alert System';
+  const customSenderAddress = config.senderAddress;
+  // If senderAddress is not set or if using Brevo/relay, default to the authenticated user address
+  const safeSenderAddress = (user && user.includes('@')) ? user : (customSenderAddress || BREVO_SMTP_DEFAULTS.user);
+
+  // If pass is a Brevo API key (starts with xkeysib- or 70+ chars), try Brevo HTTP REST API first
+  if (pass && (pass.startsWith('xkeysib-') || pass.startsWith('api-key-'))) {
+    try {
+      const apiResult = await sendViaBrevoHttpApi(pass, {
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html,
+        senderName,
+        senderAddress: safeSenderAddress,
+        replyTo: customSenderAddress || safeSenderAddress
+      });
+      console.log(`[Email Dispatcher] Success via Brevo REST API: ${apiResult.messageId}`);
+      return { ...apiResult, methodUsed: 'brevo_https_api' };
+    } catch (apiErr) {
+      console.warn('[Email Dispatcher] Brevo REST API attempt error:', apiErr);
     }
-  });
+  }
+
+  // Ports to try in cascade if timeout or connection fails
+  const isBrevoHost = host.includes('brevo.com') || host.includes('sendinblue.com');
+  const portsToTry = [Number(rawPort)];
+  if (isBrevoHost) {
+    if (!portsToTry.includes(587)) portsToTry.push(587);
+    if (!portsToTry.includes(465)) portsToTry.push(465);
+    if (!portsToTry.includes(2525)) portsToTry.push(2525);
+  }
+
+  let lastError: any = null;
+
+  for (const port of portsToTry) {
+    try {
+      const isSecure = port === 465;
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: isSecure,
+        auth: {
+          user,
+          pass
+        },
+        connectionTimeout: 4000,
+        greetingTimeout: 4000,
+        socketTimeout: 6000,
+        tls: {
+          rejectUnauthorized: false,
+          minVersion: 'TLSv1.2'
+        }
+      });
+
+      // Try sending with custom sender or authenticated user
+      let fromHeader = `"${senderName}" <${customSenderAddress || safeSenderAddress}>`;
+      let mailOptions: any = {
+        from: fromHeader,
+        to: options.to,
+        subject: options.subject,
+        text: options.text || '',
+        html: options.html || (options.text ? options.text.replace(/\n/g, '<br/>') : ''),
+        replyTo: customSenderAddress || safeSenderAddress
+      };
+
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[Email Dispatcher] Mail delivered to ${options.to} via ${host}:${port}. MessageId: ${info.messageId}`);
+        return {
+          success: true,
+          messageId: info.messageId,
+          message: `Email successfully delivered to ${options.to} via ${host}:${port}`,
+          methodUsed: `smtp_${host}_${port}`
+        };
+      } catch (sendErr: any) {
+        // If sender address was rejected as unverified (550 / 553 / 554), retry with safe authenticated username
+        if (
+          sendErr.message &&
+          (sendErr.message.includes('550') ||
+            sendErr.message.includes('553') ||
+            sendErr.message.includes('Sender address') ||
+            sendErr.message.includes('not verified') ||
+            sendErr.message.includes('not allowed')) &&
+          customSenderAddress !== safeSenderAddress
+        ) {
+          console.warn(`[Email Dispatcher] Custom sender ${customSenderAddress} unverified by relay, retrying with authenticated user <${safeSenderAddress}>...`);
+          mailOptions.from = `"${senderName}" <${safeSenderAddress}>`;
+          const info = await transporter.sendMail(mailOptions);
+          return {
+            success: true,
+            messageId: info.messageId,
+            message: `Email successfully delivered to ${options.to} via ${host}:${port} (authenticated sender)`,
+            methodUsed: `smtp_${host}_${port}_authsender`
+          };
+        }
+        throw sendErr;
+      }
+    } catch (portErr: any) {
+      lastError = portErr;
+      console.warn(`[Email Dispatcher] Attempt on ${host}:${port} failed: ${portErr.message}`);
+    }
+  }
+
+  // If all SMTP ports failed and we have Brevo key or master key, try Brevo HTTPS REST API as fallback
+  if (pass && pass.length >= 8) {
+    try {
+      const apiResult = await sendViaBrevoHttpApi(pass, {
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html,
+        senderName,
+        senderAddress: safeSenderAddress,
+        replyTo: customSenderAddress || safeSenderAddress
+      });
+      return { ...apiResult, methodUsed: 'brevo_https_api_fallback' };
+    } catch (finalApiErr: any) {
+      console.warn('[Email Dispatcher] Final Brevo HTTPS API fallback error:', finalApiErr.message);
+    }
+  }
+
+  throw lastError || new Error(`E-posta iletimi başarısız oldu (${host}). Cloud firewall veya kimlik doğrulama hatası.`);
 }
 
 // Endpoint to save & sync SMTP configuration from admin panel
@@ -577,17 +755,33 @@ app.post('/api/email/verify-connection', async (req, res) => {
     if (smtpConfig) {
       activeServerSmtpConfig = smtpConfig;
     }
-    const transporter = createTransporter(smtpConfig ? {
-      host: smtpConfig.smtpHost,
-      port: smtpConfig.smtpPort,
-      user: smtpConfig.smtpUsername,
-      pass: smtpConfig.smtpPassword
-    } : undefined);
+
+    // Perform a verification check using the unified engine
+    const config = smtpConfig || activeServerSmtpConfig || {};
+    const host = config.smtpHost || BREVO_SMTP_DEFAULTS.host;
+    const port = Number(config.smtpPort || BREVO_SMTP_DEFAULTS.port);
+    const user = config.smtpUsername || BREVO_SMTP_DEFAULTS.user;
+    let pass = config.smtpPassword || BREVO_SMTP_DEFAULTS.pass;
+
+    if (!pass || pass === '••••••••••••••••') {
+      pass = process.env.SMTP_PASS || 'bskD981CTehLLJb';
+    }
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
+      tls: { rejectUnauthorized: false }
+    });
 
     await transporter.verify();
     return res.json({
       success: true,
-      message: 'SMTP connection verified successfully! Server is ready to deliver notifications.'
+      message: `SMTP connection to ${host}:${port} verified successfully! Server is ready to deliver notifications.`
     });
   } catch (err: any) {
     console.error('[SMTP Verify Error]:', err);
@@ -598,7 +792,7 @@ app.post('/api/email/verify-connection', async (req, res) => {
   }
 });
 
-// Send email via Brevo SMTP relay
+// Send email endpoint
 app.post('/api/email/send', async (req, res) => {
   try {
     const { to, subject, body, html, smtpConfig } = req.body || {};
@@ -613,39 +807,20 @@ app.post('/api/email/send', async (req, res) => {
       activeServerSmtpConfig = smtpConfig;
     }
 
-    const effectiveSmtp = smtpConfig || activeServerSmtpConfig;
-
-    const transporter = createTransporter(effectiveSmtp ? {
-      host: effectiveSmtp.smtpHost,
-      port: effectiveSmtp.smtpPort,
-      user: effectiveSmtp.smtpUsername,
-      pass: effectiveSmtp.smtpPassword
-    } : undefined);
-
-    const senderName = effectiveSmtp?.senderName || 'İTÜ OBS Quota Alert System';
-    const senderAddress = effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user;
-
-    const mailOptions = {
-      from: `"${senderName}" <${senderAddress}>`,
+    const result = await sendOutgoingEmail({
       to,
       subject,
-      text: body || '',
-      html: html || (body ? body.replace(/\n/g, '<br/>') : '')
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[SMTP Mailer] Email successfully delivered to ${to} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}. MessageId: ${info.messageId}`);
-    return res.json({
-      success: true,
-      messageId: info.messageId,
-      response: info.response,
-      message: `Email successfully delivered to ${to} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}`
+      text: body,
+      html,
+      smtpConfig: smtpConfig || activeServerSmtpConfig || undefined
     });
+
+    return res.json(result);
   } catch (err: any) {
-    console.error('[SMTP Mailer Error]:', err);
+    console.error('[Email Dispatch Error]:', err);
     return res.status(500).json({
       success: false,
-      message: err.message || 'Failed to dispatch email via SMTP server.',
+      message: err.message || 'Failed to dispatch email.',
       error: err.toString()
     });
   }
@@ -739,22 +914,10 @@ This code is valid for 10 minutes. If you did not request this code, you can saf
 —
 İTÜ OBS Quota Alert System (${effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user})`;
 
-    const transporter = createTransporter(effectiveSmtp ? {
-      host: effectiveSmtp.smtpHost,
-      port: effectiveSmtp.smtpPort,
-      user: effectiveSmtp.smtpUsername,
-      pass: effectiveSmtp.smtpPassword
-    } : undefined);
-
     const senderName = effectiveSmtp?.senderName || 'İTÜ OBS Quota Alert System';
     const senderAddress = effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user;
 
-    const mailInfo = await transporter.sendMail({
-      from: `"${senderName}" <${senderAddress}>`,
-      to: normalizedEmail,
-      subject,
-      text: body,
-      html: `
+    const html = `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px 24px; background: #FAF9F5; border-radius: 16px; border: 1px solid #E7E5E4; color: #1C1917;">
   <div style="text-align: center; margin-bottom: 24px;">
     <div style="display: inline-block; background: #1C1917; color: #FAF9F5; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 8px;">
@@ -791,10 +954,17 @@ This code is valid for 10 minutes. If you did not request this code, you can saf
     ${senderName} &bull; ${senderAddress}
   </div>
 </div>
-      `
+      `;
+
+    const mailInfo = await sendOutgoingEmail({
+      to: normalizedEmail,
+      subject,
+      text: body,
+      html,
+      smtpConfig: effectiveSmtp
     });
 
-    console.log(`[Auth Verification] 6-digit code delivered to ${normalizedEmail} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}. MessageId: ${mailInfo.messageId}`);
+    console.log(`[Auth Verification] 6-digit code delivered to ${normalizedEmail}. MessageId: ${mailInfo.messageId}`);
     return res.json({
       success: true,
       message: `${normalizedEmail} adresine 6 haneli doğrulama kodu başarıyla gönderildi. / Verification code sent to ${normalizedEmail}.`
@@ -955,7 +1125,7 @@ app.post('/api/auth/change-password', async (req, res) => {
       });
     }
 
-    await updateUserProfile(user.id, { password: newPassword.trim() });
+    await updateUserProfile(String(user.id), { password: newPassword.trim() });
 
     return res.json({
       success: true,
@@ -1011,8 +1181,8 @@ app.post('/api/auth/forgot-password/send-code', async (req, res) => {
       attempts: 0
     });
 
-    const user = serverUsers.get(normalizedEmail);
-    const recipientName = user ? user.name : 'İTÜ Öğrencisi / Student';
+    const user = await getUserByEmail(normalizedEmail);
+    const recipientName = user ? (user as any).name || (user as any).displayName || 'İTÜ Öğrencisi / Student' : 'İTÜ Öğrencisi / Student';
 
     const subject = `İTÜ OBS Quota Tracker - Şifre Sıfırlama Kodu / Password Reset Code: ${code}`;
     const body = `🔒 ŞİFRE SIFIRLAMA KODU / PASSWORD RESET CODE
@@ -1050,22 +1220,10 @@ If you did not request this, please disregard this email.
 —
 İTÜ OBS Quota Alert System (${effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user})`;
 
-    const transporter = createTransporter(effectiveSmtp ? {
-      host: effectiveSmtp.smtpHost,
-      port: effectiveSmtp.smtpPort,
-      user: effectiveSmtp.smtpUsername,
-      pass: effectiveSmtp.smtpPassword
-    } : undefined);
-
     const senderName = effectiveSmtp?.senderName || 'İTÜ OBS Quota Alert System';
     const senderAddress = effectiveSmtp?.senderAddress || BREVO_SMTP_DEFAULTS.user;
 
-    const mailInfo = await transporter.sendMail({
-      from: `"${senderName}" <${senderAddress}>`,
-      to: normalizedEmail,
-      subject,
-      text: body,
-      html: `
+    const html = `
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 28px 24px; background: #FAF9F5; border-radius: 16px; border: 1px solid #E7E5E4; color: #1C1917;">
   <div style="text-align: center; margin-bottom: 24px;">
     <div style="display: inline-block; background: #1C1917; color: #FAF9F5; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 8px;">
@@ -1106,10 +1264,17 @@ If you did not request this, please disregard this email.
     ${senderName} &bull; ${senderAddress}
   </div>
 </div>
-      `
+      `;
+
+    const mailInfo = await sendOutgoingEmail({
+      to: normalizedEmail,
+      subject,
+      text: body,
+      html,
+      smtpConfig: effectiveSmtp
     });
 
-    console.log(`[Password Reset] 6-digit reset code delivered to ${normalizedEmail} via ${effectiveSmtp?.smtpHost || BREVO_SMTP_DEFAULTS.host}. MessageId: ${mailInfo.messageId}`);
+    console.log(`[Password Reset] 6-digit reset code delivered to ${normalizedEmail}. MessageId: ${mailInfo.messageId}`);
     return res.json({
       success: true,
       message: `${normalizedEmail} adresine 6 haneli şifre sıfırlama kodu gönderildi. / Reset code sent to ${normalizedEmail}.`,
@@ -1183,7 +1348,7 @@ app.post('/api/auth/forgot-password/verify-and-reset', async (req, res) => {
 
     const user = await getUserByEmail(normalizedEmail);
     if (user) {
-      await updateUserProfile(user.id, { password: newPassword.trim() });
+      await updateUserProfile(String(user.id), { password: newPassword.trim() });
     }
 
     // Delete used code
@@ -1203,8 +1368,32 @@ app.post('/api/auth/forgot-password/verify-and-reset', async (req, res) => {
 });
 
 // ==========================================
-// Admin Database Accounts Management Endpoints (Cloud SQL)
+// Admin Database Accounts & Trackers Management Endpoints (Cloud SQL)
 // ==========================================
+
+// Endpoint: Get all active/all trackers, tracked course groups, and users across all students
+app.get('/api/admin/all-trackers', async (_req, res) => {
+  try {
+    const [allUsers, allMonitors, allGroups] = await Promise.all([
+      getAllUsers(),
+      getAllMonitors(),
+      getAllTrackedGroups(),
+    ]);
+
+    return res.json({
+      success: true,
+      users: allUsers,
+      monitors: allMonitors,
+      trackedCourseGroups: allGroups,
+    });
+  } catch (err: any) {
+    console.error('[Admin All Trackers Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Tüm takip verileri getirilemedi.'
+    });
+  }
+});
 
 // Endpoint: Get all server-registered accounts from Cloud SQL for Admin
 app.get('/api/admin/users', async (_req, res) => {
@@ -1227,7 +1416,7 @@ app.get('/api/admin/users', async (_req, res) => {
 // Endpoint: Admin Update User Account in Cloud SQL
 app.post('/api/admin/user/update', async (req, res) => {
   try {
-    const { email, name, password, isVerified } = req.body || {};
+    const { email, name, password } = req.body || {};
     const normalizedEmail = (email || '').trim().toLowerCase();
 
     if (!normalizedEmail) {
@@ -1256,7 +1445,7 @@ app.post('/api/admin/user/update', async (req, res) => {
     if (name !== undefined) updates.displayName = name.trim();
     if (password !== undefined && password.trim().length > 0) updates.password = password.trim();
 
-    const updated = await updateUserProfile(user.id, updates);
+    const updated = await updateUserProfile(String(user.id), updates);
     return res.json({
       success: true,
       message: `${normalizedEmail} kullanıcısının bilgileri başarıyla güncellendi.`,
@@ -1365,14 +1554,15 @@ app.post('/api/auth/sync-user', async (req: express.Request, res: express.Respon
 });
 
 // Endpoint: Update User Profile in Cloud SQL
-app.put('/api/auth/update-profile', async (req: express.Request, res: express.Response) => {
+const handleUpdateProfile = async (req: express.Request, res: express.Response) => {
   try {
-    const { uid, name, enrolledPrograms, preferredLanguage, theme, hasCompletedProgramOnboarding } = req.body || {};
-    if (!uid) {
-      return res.status(400).json({ error: 'UID is required' });
+    const { uid, email, name, enrolledPrograms, preferredLanguage, theme, hasCompletedProgramOnboarding } = req.body || {};
+    const lookupKey = uid || email;
+    if (!lookupKey) {
+      return res.status(400).json({ error: 'UID or email is required' });
     }
 
-    const updated = await updateUserProfile(uid, {
+    const updated = await updateUserProfile(lookupKey, {
       name,
       enrolledPrograms,
       preferredLanguage,
@@ -1385,7 +1575,10 @@ app.put('/api/auth/update-profile', async (req: express.Request, res: express.Re
     console.error('Error updating user profile in Cloud SQL:', error);
     return res.status(500).json({ error: 'Failed to update user profile in Cloud SQL' });
   }
-});
+};
+
+app.put('/api/auth/update-profile', handleUpdateProfile);
+app.post('/api/auth/update-profile', handleUpdateProfile);
 
 // Endpoint: Get all User Data (Monitors, Tracked Groups, Profile) from Cloud SQL
 app.get('/api/db/user-data', async (req: express.Request, res: express.Response) => {
@@ -1571,16 +1764,7 @@ async function runServerBackgroundQuotaDaemon() {
           if (liveAvailable > currentAvailable && mon.notificationEmail) {
             console.log(`[DAEMON ALERT] Available quota increased for CRN ${mon.crn} (${mon.courseCode}): ${currentAvailable} -> ${liveAvailable}. Sending automated email to ${mon.notificationEmail}...`);
 
-            const transporter = createTransporter(activeServerSmtpConfig ? {
-              host: activeServerSmtpConfig.smtpHost,
-              port: activeServerSmtpConfig.smtpPort,
-              user: activeServerSmtpConfig.smtpUsername,
-              pass: activeServerSmtpConfig.smtpPassword
-            } : undefined);
-
-            const senderName = activeServerSmtpConfig?.senderName || 'İTÜ OBS Quota Alert System';
             const senderAddress = activeServerSmtpConfig?.senderAddress || BREVO_SMTP_DEFAULTS.user;
-
             const subject = `🚨 KONTENJAN AÇILDI! - CRN ${mon.crn} (${mon.courseCode})`;
             const body = `🚨 KONTENJAN AÇILDI!
 
@@ -1601,24 +1785,23 @@ Takip ettiğiniz derste yeni boş kontenjan açıldı:
 —
 İTÜ OBS Kontenjan Uyarı Sistemi (${senderAddress})`;
 
-            await transporter.sendMail({
-              from: `"${senderName}" <${senderAddress}>`,
+            await sendOutgoingEmail({
               to: mon.notificationEmail,
               subject,
-              text: body
+              text: body,
+              smtpConfig: activeServerSmtpConfig || undefined
             });
 
             // Log event in Cloud SQL history
             await addQuotaHistoryEvent({
+              id: 'hist-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
               monitorId: mon.id,
               userId: mon.userId,
-              crn: mon.crn,
-              courseCode: mon.courseCode,
-              eventType: 'capacity_increase',
+              type: 'capacity_increase',
               oldAvailable: currentAvailable,
               newAvailable: liveAvailable,
-              oldCapacity: mon.totalCapacity || liveCapacity,
-              newCapacity: liveCapacity,
+              oldEnrolled: mon.enrolled || liveEnrolled,
+              newEnrolled: liveEnrolled,
               emailDispatched: true,
               emailRecipient: mon.notificationEmail,
               emailSubject: subject
@@ -1626,13 +1809,7 @@ Takip ettiğiniz derste yeni boş kontenjan açıldı:
           }
 
           // Update monitor in Cloud SQL
-          await updateMonitorQuota(mon.id, {
-            totalCapacity: liveCapacity,
-            enrolled: liveEnrolled,
-            availableSeats: liveAvailable,
-            lastChecked: new Date().toISOString(),
-            lastChanged: liveAvailable !== currentAvailable ? new Date().toISOString() : undefined
-          });
+          await updateMonitorQuota(mon.id, liveCapacity, liveEnrolled, liveAvailable);
         } catch (monErr) {
           console.warn(`[DAEMON] Error processing monitor ${mon.crn}:`, monErr);
         }
@@ -1649,26 +1826,30 @@ Takip ettiğiniz derste yeni boş kontenjan açıldı:
           );
 
           if (liveSections.length > 0) {
-            const mappedSections = liveSections.map((c) => ({
-              crn: c.crn,
-              courseCode: c.courseCode,
-              courseTitle: c.courseTitle,
-              teachingMethod: c.teachingMethod,
-              instructor: c.instructor,
-              building: c.building,
-              day: c.day,
-              time: c.time,
-              room: c.room,
-              capacity: c.capacity,
-              enrolled: c.enrolled,
-              availableSeats: c.remaining,
-              majorRestriction: c.majorRestriction,
-              prerequisites: c.prerequisites,
-              classRestriction: c.classRestriction,
-              lastChecked: new Date().toISOString()
-            }));
+            const liveMap = new Map(liveSections.map((c) => [c.crn, c]));
+            const existingSections = Array.isArray(group.sections) ? (group.sections as any[]) : [];
+            const updatedSections = existingSections.map((sec: any) => {
+              const live = liveMap.get(sec.crn);
+              if (!live) return sec;
+              return {
+                ...sec,
+                capacity: live.capacity,
+                enrolled: live.enrolled,
+                availableSeats: live.remaining,
+                instructor: live.instructor || sec.instructor,
+                restrictions: live.restrictions || sec.restrictions,
+                lastChecked: new Date().toISOString()
+              };
+            });
 
-            await updateTrackedGroupSections(group.id, mappedSections);
+            const currentKnown = Array.isArray(group.knownCrns) ? group.knownCrns : [];
+            const allKnownCrns = Array.from(new Set([...currentKnown, ...liveSections.map((s) => s.crn)]));
+
+            await updateTrackedGroupSections(
+              group.id,
+              updatedSections,
+              allKnownCrns
+            );
           }
         } catch (grpErr) {
           console.warn(`[DAEMON] Error processing group ${group.courseCode}:`, grpErr);

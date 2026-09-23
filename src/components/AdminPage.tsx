@@ -26,15 +26,25 @@ import {
   X,
   Code2,
   ExternalLink,
-  Globe
+  Globe,
+  Layers,
+  BookOpen
 } from 'lucide-react';
-import { ClassMonitor, EmailSenderConfig, GlobalSettings, QuotaHistoryEvent, UserAccount } from '../types';
+import {
+  ClassMonitor,
+  EmailSenderConfig,
+  GlobalSettings,
+  QuotaHistoryEvent,
+  TrackedCourseGroup,
+  UserAccount
+} from '../types';
 import { PasswordInput } from './PasswordInput';
 import { deleteUserAccount, loadUsers, saveUsers, updateUserAccount } from '../utils/storage';
 
 interface AdminPageProps {
   onExit: () => void;
   monitors: ClassMonitor[];
+  trackedCourseGroups?: TrackedCourseGroup[];
   emailConfig: EmailSenderConfig;
   settings: GlobalSettings;
   onSaveEmailConfig: (newConfig: EmailSenderConfig) => void;
@@ -42,7 +52,14 @@ interface AdminPageProps {
   onTogglePauseMonitor: (id: string) => void;
   onDeleteMonitor: (id: string) => void;
   onForceCheckMonitor: (id: string) => void;
+  onTogglePauseGroup?: (id: string) => void;
+  onDeleteGroup?: (id: string) => void;
+  onForceCheckGroup?: (id: string) => void;
   onSendTestEmail: (recipientEmail: string, customSubject?: string) => void;
+  onSimulateDrop?: (id: string) => void;
+  onSimulateClaim?: (id: string) => void;
+  onSimulateCapacityIncrease?: (id: string) => void;
+  onSimulateNewCrn?: (courseCode: string) => void;
   isAdminAuthenticated: boolean;
   onSetAdminAuthenticated: (auth: boolean) => void;
 }
@@ -52,6 +69,7 @@ type AdminTab = 'trackers' | 'users' | 'scraper' | 'email_account' | 'audit_logs
 export const AdminPage: React.FC<AdminPageProps> = ({
   onExit,
   monitors,
+  trackedCourseGroups = [],
   emailConfig,
   settings,
   onSaveEmailConfig,
@@ -59,7 +77,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   onTogglePauseMonitor,
   onDeleteMonitor,
   onForceCheckMonitor,
+  onTogglePauseGroup,
+  onDeleteGroup,
+  onForceCheckGroup,
   onSendTestEmail,
+  onSimulateDrop,
+  onSimulateClaim,
+  onSimulateCapacityIncrease,
+  onSimulateNewCrn,
   isAdminAuthenticated,
   onSetAdminAuthenticated
 }) => {
@@ -69,8 +94,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
   // Admin Dashboard state
   const [activeTab, setActiveTab] = useState<AdminTab>('trackers');
+  const [trackerSubTab, setTrackerSubTab] = useState<'all' | 'groups' | 'single'>('all');
   const [studentSearch, setStudentSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'paused' | 'open_seats'>('all');
+
+  // Database Synced State (Includes all students' trackers from Cloud SQL)
+  const [allMonitors, setAllMonitors] = useState<ClassMonitor[]>(monitors);
+  const [allGroups, setAllGroups] = useState<TrackedCourseGroup[]>(trackedCourseGroups);
+  const [users, setUsers] = useState<UserAccount[]>(() => loadUsers());
+  const [userSearch, setUserSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Email Config editing state
   const [editedEmailConfig, setEditedEmailConfig] = useState<EmailSenderConfig>({ ...emailConfig });
@@ -89,7 +123,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     data?: any;
     durationMs?: number;
   } | null>(null);
-  const [scraperTableFilter, setScraperTableFilter] = useState('');
 
   useEffect(() => {
     setEditedSettings({ ...settings });
@@ -104,10 +137,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Registered Users (Database) State
-  const [users, setUsers] = useState<UserAccount[]>(() => loadUsers());
-  const [userSearch, setUserSearch] = useState('');
-  const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
+  // User Edit Modal State
   const [editUserName, setEditUserName] = useState('');
   const [editUserPassword, setEditUserPassword] = useState('');
   const [editUserVerified, setEditUserVerified] = useState(true);
@@ -117,50 +147,163 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
   const [resetEmailFeedback, setResetEmailFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
-  const refreshUsersList = async () => {
+  // Fetch all registered users, monitors, and course groups across the entire server database
+  const refreshAllAdminData = async () => {
+    setIsRefreshing(true);
     const localUsers = loadUsers();
-    setUsers(localUsers);
     try {
-      const res = await fetch('/api/admin/users');
+      const res = await fetch('/api/admin/all-trackers');
       if (res.ok) {
         const data = await res.json();
-        if (data.users && Array.isArray(data.users)) {
-          const map = new Map<string, UserAccount>();
-          for (const u of localUsers) {
-            if (u.email) map.set(u.email.toLowerCase(), u);
-          }
-          for (const su of data.users) {
-            if (su.email && !map.has(su.email.toLowerCase())) {
-              map.set(su.email.toLowerCase(), {
-                id: su.id || 'usr-' + Date.now(),
-                name: su.name || 'Öğrenci',
+        if (data.success) {
+          // 1. Process and safely map users
+          if (Array.isArray(data.users)) {
+            const map = new Map<string, UserAccount>();
+            for (const u of localUsers) {
+              if (u && u.email) map.set(u.email.toLowerCase().trim(), u);
+            }
+            for (const su of data.users) {
+              if (!su || !su.email) continue;
+              const emailKey = su.email.toLowerCase().trim();
+              const existing = map.get(emailKey);
+              map.set(emailKey, {
+                id: String(su.id || existing?.id || 'usr-' + Date.now()),
+                name: su.name || su.displayName || existing?.name || 'Öğrenci',
                 email: su.email,
-                password: su.password || '',
+                password: su.password || existing?.password || '',
                 isVerified: su.isVerified !== false,
-                createdAt: su.createdAt || new Date().toISOString(),
-                lastLoginAt: su.lastLoginAt || new Date().toISOString()
+                enrolledPrograms: su.enrolledPrograms || existing?.enrolledPrograms || [],
+                hasCompletedProgramOnboarding: su.hasCompletedProgramOnboarding ?? existing?.hasCompletedProgramOnboarding ?? true,
+                preferredLanguage: su.preferredLanguage || existing?.preferredLanguage || 'tr',
+                theme: su.theme || existing?.theme || 'light',
+                createdAt: su.createdAt ? String(su.createdAt) : existing?.createdAt || new Date().toISOString(),
+                lastLoginAt: su.lastLoginAt ? String(su.lastLoginAt) : existing?.lastLoginAt || new Date().toISOString()
               });
             }
+            const merged = Array.from(map.values());
+            setUsers(merged);
+            saveUsers(merged);
           }
-          const merged = Array.from(map.values());
-          setUsers(merged);
-          saveUsers(merged);
+
+          // 2. Process Monitors
+          if (Array.isArray(data.monitors)) {
+            setAllMonitors(data.monitors);
+          }
+
+          // 3. Process Tracked Course Groups
+          if (Array.isArray(data.trackedCourseGroups)) {
+            setAllGroups(data.trackedCourseGroups);
+          }
+        }
+      } else {
+        // Fallback to separate users endpoint if needed
+        const uRes = await fetch('/api/admin/users');
+        if (uRes.ok) {
+          const uData = await uRes.json();
+          if (uData.users && Array.isArray(uData.users)) {
+            const map = new Map<string, UserAccount>();
+            for (const u of localUsers) if (u?.email) map.set(u.email.toLowerCase().trim(), u);
+            for (const su of uData.users) {
+              if (!su?.email) continue;
+              const emailKey = su.email.toLowerCase().trim();
+              const existing = map.get(emailKey);
+              map.set(emailKey, {
+                id: String(su.id || existing?.id || 'usr-' + Date.now()),
+                name: su.name || su.displayName || existing?.name || 'Öğrenci',
+                email: su.email,
+                password: su.password || existing?.password || '',
+                isVerified: su.isVerified !== false,
+                enrolledPrograms: su.enrolledPrograms || existing?.enrolledPrograms || [],
+                hasCompletedProgramOnboarding: su.hasCompletedProgramOnboarding ?? true,
+                createdAt: su.createdAt ? String(su.createdAt) : new Date().toISOString(),
+                lastLoginAt: su.lastLoginAt ? String(su.lastLoginAt) : new Date().toISOString()
+              });
+            }
+            const merged = Array.from(map.values());
+            setUsers(merged);
+            saveUsers(merged);
+          }
         }
       }
-    } catch {
-      // offline fallback
+    } catch (err) {
+      console.error('[Admin Refresh Error]:', err);
+      setUsers(localUsers);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
     if (isAdminAuthenticated) {
-      refreshUsersList();
+      refreshAllAdminData();
     }
   }, [isAdminAuthenticated]);
 
+  // Sync props when parent updates
+  useEffect(() => {
+    if (monitors && monitors.length > 0) {
+      setAllMonitors((prev) => {
+        const map = new Map(prev.map((m) => [m.id, m]));
+        for (const m of monitors) map.set(m.id, m);
+        return Array.from(map.values());
+      });
+    }
+  }, [monitors]);
+
+  useEffect(() => {
+    if (trackedCourseGroups && trackedCourseGroups.length > 0) {
+      setAllGroups((prev) => {
+        const map = new Map(prev.map((g) => [g.id, g]));
+        for (const g of trackedCourseGroups) map.set(g.id, g);
+        return Array.from(map.values());
+      });
+    }
+  }, [trackedCourseGroups]);
+
+  // Safe helper to format date
+  const formatSafeDate = (dateVal?: string | Date | null) => {
+    if (!dateVal) return 'Bilinmiyor';
+    try {
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return 'Bilinmiyor';
+      return d.toLocaleDateString('tr-TR');
+    } catch {
+      return 'Bilinmiyor';
+    }
+  };
+
+  // Helper to get tracked items for a specific student
+  const getUserTrackedInfo = (email?: string, userId?: string) => {
+    const normEmail = (email || '').toLowerCase().trim();
+    const normId = (userId || '').toLowerCase().trim();
+
+    const userMons = (allMonitors || []).filter((m) => {
+      const mEmail = (m.notificationEmail || '').toLowerCase().trim();
+      const mUid = (m.userId || '').toLowerCase().trim();
+      return (normEmail && mEmail === normEmail) || (normId && mUid === normId);
+    });
+
+    const userGrps = (allGroups || []).filter((g) => {
+      const gEmail = (g.email || '').toLowerCase().trim();
+      const gUid = (g.userId || '').toLowerCase().trim();
+      return (normEmail && gEmail === normEmail) || (normId && gUid === normId);
+    });
+
+    const totalCrnCount =
+      userMons.length +
+      userGrps.reduce((acc, g) => acc + (Array.isArray(g.sections) ? g.sections.length : 0), 0);
+
+    return {
+      monitors: userMons,
+      groups: userGrps,
+      totalGroups: userGrps.length,
+      totalCrns: totalCrnCount
+    };
+  };
+
   const handleSelectUser = (user: UserAccount) => {
     setSelectedUser(user);
-    setEditUserName(user.name);
+    setEditUserName(user.name || '');
     setEditUserPassword(user.password || '');
     setEditUserVerified(user.isVerified !== false);
     setShowPasswordInModal(false);
@@ -197,8 +340,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
     updateUserAccount(selectedUser.email, updatedData);
 
-    const updatedList = users.map((u) =>
-      u.email.toLowerCase() === selectedUser.email.toLowerCase()
+    const updatedList = (users || []).map((u) =>
+      (u.email || '').toLowerCase() === (selectedUser.email || '').toLowerCase()
         ? { ...u, ...updatedData }
         : u
     );
@@ -258,8 +401,10 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       return;
     }
     deleteUserAccount(userToDelete.email);
-    setUsers((prev) => prev.filter((u) => u.email.toLowerCase() !== userToDelete.email.toLowerCase()));
-    if (selectedUser?.email.toLowerCase() === userToDelete.email.toLowerCase()) {
+    setUsers((prev) =>
+      (prev || []).filter((u) => (u.email || '').toLowerCase() !== (userToDelete.email || '').toLowerCase())
+    );
+    if ((selectedUser?.email || '').toLowerCase() === (userToDelete.email || '').toLowerCase()) {
       setSelectedUser(null);
     }
     try {
@@ -273,14 +418,16 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     }
   };
 
-  const filteredUsers = users.filter((u) => {
+  // Safe search filter for Users
+  const filteredUsers = (users || []).filter((u) => {
+    if (!u) return false;
     const q = userSearch.toLowerCase().trim();
     if (!q) return true;
-    return (
-      (u.name && u.name.toLowerCase().includes(q)) ||
-      (u.email && u.email.toLowerCase().includes(q)) ||
-      (u.id && u.id.toLowerCase().includes(q))
-    );
+    const nameStr = (u.name || '').toLowerCase();
+    const emailStr = (u.email || '').toLowerCase();
+    const idStr = String(u.id || '').toLowerCase();
+    const programsStr = (u.enrolledPrograms || []).map((p) => `${p.code} ${p.nameTr}`).join(' ').toLowerCase();
+    return nameStr.includes(q) || emailStr.includes(q) || idStr.includes(q) || programsStr.includes(q);
   });
 
   const currentAdminPassword = settings.adminPassword || 'HelloWorld';
@@ -399,37 +546,83 @@ export const AdminPage: React.FC<AdminPageProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Filtered monitors for "Monitor who is tracking which class"
-  const filteredMonitors = monitors.filter((m) => {
+  // Filter single monitors
+  const filteredMonitors = (allMonitors || []).filter((m) => {
     if (filterStatus === 'active' && m.status !== 'active') return false;
     if (filterStatus === 'paused' && m.status !== 'paused') return false;
     if (filterStatus === 'open_seats' && m.availableSeats === 0) return false;
 
     if (!studentSearch.trim()) return true;
-    const q = studentSearch.toLowerCase();
+    const q = studentSearch.toLowerCase().trim();
     return (
-      m.notificationEmail.toLowerCase().includes(q) ||
-      (m.studentName && m.studentName.toLowerCase().includes(q)) ||
-      m.crn.includes(q) ||
-      m.courseCode.toLowerCase().includes(q) ||
-      m.courseTitle.toLowerCase().includes(q)
+      (m.notificationEmail || '').toLowerCase().includes(q) ||
+      (m.studentName || '').toLowerCase().includes(q) ||
+      (m.crn || '').includes(q) ||
+      (m.courseCode || '').toLowerCase().includes(q) ||
+      (m.courseTitle || '').toLowerCase().includes(q)
+    );
+  });
+
+  // Filter course groups
+  const filteredGroups = (allGroups || []).filter((g) => {
+    const totalAvail = (g.sections || []).reduce((acc, s) => acc + (s.availableSeats || 0), 0);
+    if (filterStatus === 'active' && g.status !== 'active') return false;
+    if (filterStatus === 'paused' && g.status !== 'paused') return false;
+    if (filterStatus === 'open_seats' && totalAvail === 0) return false;
+
+    if (!studentSearch.trim()) return true;
+    const q = studentSearch.toLowerCase().trim();
+    return (
+      (g.email || '').toLowerCase().includes(q) ||
+      (g.courseCode || '').toLowerCase().includes(q) ||
+      (g.courseTitle || '').toLowerCase().includes(q) ||
+      (g.knownCrns || []).some((c) => c.includes(q)) ||
+      (g.sections || []).some((s) => (s.crn || '').includes(q) || (s.instructor || '').toLowerCase().includes(q))
     );
   });
 
   // Aggregate audit logs
-  const allHistoryEvents: { event: QuotaHistoryEvent; monitor: ClassMonitor }[] = [];
-  monitors.forEach((m) => {
-    m.history.forEach((h) => {
-      allHistoryEvents.push({ event: h, monitor: m });
+  const allHistoryEvents: { event: QuotaHistoryEvent; monitorTitle: string; studentEmail: string }[] = [];
+  (allMonitors || []).forEach((m) => {
+    (m.history || []).forEach((h) => {
+      allHistoryEvents.push({
+        event: h,
+        monitorTitle: `${m.courseCode} (CRN ${m.crn})`,
+        studentEmail: m.notificationEmail
+      });
+    });
+  });
+  (allGroups || []).forEach((g) => {
+    (g.history || []).forEach((h) => {
+      allHistoryEvents.push({
+        event: h,
+        monitorTitle: `${g.courseCode} (Grup - ${g.sections?.length || 0} Şube)`,
+        studentEmail: g.email
+      });
     });
   });
   allHistoryEvents.sort((a, b) => new Date(b.event.timestamp).getTime() - new Date(a.event.timestamp).getTime());
 
-  // Statistics
-  const uniqueStudents = new Set(monitors.map((m) => m.notificationEmail)).size;
+  // Comprehensive Metrics
+  const uniqueStudents = new Set([
+    ...(allMonitors || []).map((m) => (m.notificationEmail || '').toLowerCase().trim()),
+    ...(allGroups || []).map((g) => (g.email || '').toLowerCase().trim()),
+    ...(users || []).map((u) => (u.email || '').toLowerCase().trim())
+  ].filter(Boolean)).size;
+
+  const totalTrackedEntities = (allMonitors || []).length + (allGroups || []).length;
   const totalEmailsDispatched = allHistoryEvents.filter((e) => e.event.emailDispatched).length;
-  const activeMonitorsCount = monitors.filter((m) => m.status === 'active').length;
-  const openSeatsCount = monitors.reduce((acc, m) => acc + (m.availableSeats > 0 ? m.availableSeats : 0), 0);
+  const activeMonitorsCount =
+    (allMonitors || []).filter((m) => m.status === 'active').length +
+    (allGroups || []).filter((g) => g.status === 'active').length;
+
+  const openSeatsCount =
+    (allMonitors || []).reduce((acc, m) => acc + (m.availableSeats > 0 ? m.availableSeats : 0), 0) +
+    (allGroups || []).reduce(
+      (acc, g) =>
+        acc + (g.sections || []).reduce((sAcc, s) => sAcc + (s.availableSeats > 0 ? s.availableSeats : 0), 0),
+      0
+    );
 
   return (
     <div id="admin-page-root" className="min-h-screen bg-[#FAF9F5] text-stone-900 flex flex-col font-sans">
@@ -440,63 +633,61 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             <button
               id="admin-exit-btn"
               onClick={onExit}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+              className="p-2 rounded-xl text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors cursor-pointer"
+              title="Öğrenci Paneline Dön"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Ana Sayfa</span>
+              <ArrowLeft className="w-5 h-5" />
             </button>
-
-            {isAdminAuthenticated && (
-              <>
-                <div className="h-4 w-px bg-stone-200" />
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-white font-bold text-xs">
-                    OBS
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h1 className="font-bold text-sm text-stone-900 leading-tight">İTÜ OBS Yönetim Paneli</h1>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-mono border border-stone-200">
-                        /admin
-                      </span>
-                    </div>
-                  </div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-stone-900 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                <Shield className="w-4 h-4 text-amber-400" />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold text-stone-900 leading-tight">İTÜ OBS Yönetim Konsolu</h1>
+                <div className="flex items-center gap-1.5 text-[10px] text-stone-500 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Cloud SQL • 24/7 Background Daemon Aktif</span>
                 </div>
-              </>
-            )}
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {isAdminAuthenticated && (
-              <div className="flex items-center gap-3">
-                <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Yönetici Oturumu Açık
-                </span>
+              <>
                 <button
-                  id="admin-logout-btn"
+                  onClick={refreshAllAdminData}
+                  disabled={isRefreshing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Tüm Verileri Yenile"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Yenile</span>
+                </button>
+                <button
                   onClick={handleLogout}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-rose-700 hover:bg-rose-50 border border-rose-200 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>Çıkış Yap</span>
                 </button>
-              </div>
+              </>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Body */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center">
+      {/* Main Content Area */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full">
         {!isAdminAuthenticated ? (
-          /* Ultra-clean and Minimalist Authentication Form */
-          <div className="max-w-sm mx-auto w-full my-auto bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-sm">
+          /* Clean Authentication Form */
+          <div className="max-w-sm mx-auto w-full my-12 bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-sm">
             <div className="text-center space-y-2 mb-6">
               <div className="w-10 h-10 bg-stone-100 rounded-xl flex items-center justify-center mx-auto text-stone-800">
                 <Lock className="w-5 h-5" />
               </div>
               <h2 className="text-lg font-bold text-stone-900">Yönetici Girişi</h2>
+              <p className="text-xs text-stone-500">Tüm öğrencilerin takiplerini ve hesaplarını yönetmek için şifre giriniz.</p>
             </div>
 
             {authError && (
@@ -531,7 +722,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
             </form>
           </div>
         ) : (
-          /* Authenticated Admin Dashboard with Dedicated Tabs ("ayrı bir sekme olsun") */
+          /* Authenticated Admin Dashboard */
           <div className="space-y-6">
             {/* Dedicated Tabs Navigation */}
             <div className="bg-white rounded-2xl p-1.5 border border-stone-200 shadow-2xs flex flex-wrap gap-1">
@@ -545,14 +736,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 }`}
               >
                 <Users className="w-4 h-4" />
-                <span>Takip Edilen Dersler ({monitors.length})</span>
+                <span>Takip Edilen Dersler ({totalTrackedEntities})</span>
               </button>
 
               <button
                 id="admin-tab-users"
                 onClick={() => {
                   setActiveTab('users');
-                  refreshUsersList();
+                  refreshAllAdminData();
                 }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'users'
@@ -574,7 +765,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 }`}
               >
                 <Globe className="w-4 h-4" />
-                <span>Source Scraper & Kaynak ({monitors.length})</span>
+                <span>Source Scraper & Kaynak</span>
               </button>
 
               <button
@@ -661,12 +852,39 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     />
                   </div>
 
-                  <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                  <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                    <div className="flex items-center bg-stone-100 p-0.5 rounded-xl mr-2">
+                      <button
+                        onClick={() => setTrackerSubTab('all')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          trackerSubTab === 'all' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500 hover:text-stone-900'
+                        }`}
+                      >
+                        Tümü ({allMonitors.length + allGroups.length})
+                      </button>
+                      <button
+                        onClick={() => setTrackerSubTab('groups')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          trackerSubTab === 'groups' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500 hover:text-stone-900'
+                        }`}
+                      >
+                        Ders Grupları ({allGroups.length})
+                      </button>
+                      <button
+                        onClick={() => setTrackerSubTab('single')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                          trackerSubTab === 'single' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500 hover:text-stone-900'
+                        }`}
+                      >
+                        Tekil CRN ({allMonitors.length})
+                      </button>
+                    </div>
+
                     {(['all', 'active', 'paused', 'open_seats'] as const).map((st) => (
                       <button
                         key={st}
                         onClick={() => setFilterStatus(st)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize transition-colors cursor-pointer ${
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-medium capitalize transition-colors cursor-pointer ${
                           filterStatus === st
                             ? 'bg-stone-900 text-white'
                             : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
@@ -684,125 +902,323 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   </div>
                 </div>
 
-                {/* Trackers Table */}
-                <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-stone-50 text-stone-500 font-semibold border-b border-stone-200">
-                        <tr>
-                          <th className="py-3 px-4">CRN & Ders</th>
-                          <th className="py-3 px-4">Öğrenci & Bildirim</th>
-                          <th className="py-3 px-4">Kontenjan</th>
-                          <th className="py-3 px-4">Durum</th>
-                          <th className="py-3 px-4 text-right">Yönetici İşlemleri</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-100">
-                        {filteredMonitors.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-8 text-center text-stone-400">
-                              Kriterlere uygun takip kaydı bulunamadı.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredMonitors.map((mon) => (
-                            <tr key={mon.id} className="hover:bg-stone-50/80 transition-colors">
-                              <td className="py-3 px-4">
+                {/* Section 1: Ders Kodu Bazlı Takip Grupları */}
+                {(trackerSubTab === 'all' || trackerSubTab === 'groups') && filteredGroups.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-stone-500" />
+                        <span>Ders Kodu Bazlı Takip Grupları ({filteredGroups.length})</span>
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {filteredGroups.map((group) => {
+                        const totalAvail = (group.sections || []).reduce((acc, s) => acc + (s.availableSeats || 0), 0);
+                        const totalCap = (group.sections || []).reduce((acc, s) => acc + (s.capacity || 0), 0);
+                        const totalEnrolled = (group.sections || []).reduce((acc, s) => acc + (s.enrolled || 0), 0);
+
+                        return (
+                          <div
+                            key={group.id}
+                            className="bg-white rounded-2xl border border-stone-200 p-4 shadow-2xs hover:shadow-sm transition-shadow space-y-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono font-bold text-stone-900 bg-stone-100 px-2 py-0.5 rounded">
-                                    {mon.crn}
+                                  <span className="font-mono font-bold text-sm text-stone-900 bg-stone-100 px-2.5 py-0.5 rounded-lg">
+                                    {group.courseCode}
                                   </span>
-                                  <button
-                                    onClick={() => handleCopyCrn(mon.crn)}
-                                    title="CRN Kopyala"
-                                    className="text-stone-400 hover:text-stone-700 cursor-pointer"
-                                  >
-                                    {copiedId === mon.crn ? (
-                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                    ) : (
-                                      <Copy className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
-                                  <span className="font-semibold text-stone-800">{mon.courseCode}</span>
-                                </div>
-                                <div className="text-[11px] text-stone-500 truncate max-w-xs">{mon.courseTitle}</div>
-                              </td>
-                              <td className="py-3 px-4">
-                                <div className="font-medium text-stone-900">{mon.studentName || 'Öğrenci'}</div>
-                                <div className="text-[11px] text-stone-500 font-mono">{mon.notificationEmail}</div>
-                              </td>
-                              <td className="py-3 px-4">
-                                <div className="flex items-center gap-1.5">
                                   <span
-                                    className={`font-bold px-2 py-0.5 rounded-full text-[11px] ${
-                                      mon.availableSeats > 0
-                                        ? 'bg-emerald-100 text-emerald-800'
-                                        : 'bg-stone-100 text-stone-600'
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                      group.status === 'active'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : 'bg-amber-50 text-amber-700 border border-amber-200'
                                     }`}
                                   >
-                                    {mon.availableSeats} Boş
-                                  </span>
-                                  <span className="text-[11px] text-stone-400 font-mono">
-                                    ({mon.enrolled}/{mon.totalCapacity})
+                                    {group.status === 'active' ? 'Aktif Takip' : 'Duraklatıldı'}
                                   </span>
                                 </div>
-                              </td>
-                              <td className="py-3 px-4">
+                                <h4 className="text-xs font-semibold text-stone-700 mt-1 line-clamp-1">
+                                  {group.courseTitle || 'Ders'}
+                                </h4>
+                              </div>
+
+                              <div className="text-right">
                                 <span
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    mon.status === 'active'
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  className={`inline-block font-bold text-xs px-2.5 py-1 rounded-xl ${
+                                    totalAvail > 0
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-stone-100 text-stone-600'
                                   }`}
                                 >
-                                  <span
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      mon.status === 'active' ? 'bg-emerald-500' : 'bg-amber-500'
-                                    }`}
-                                  />
-                                  {mon.status === 'active' ? 'Takip Ediliyor' : 'Duraklatıldı'}
+                                  {totalAvail > 0 ? `🚨 ${totalAvail} Boş Kontenjan` : 'Kontenjan Dolu'}
                                 </span>
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="inline-flex items-center gap-1.5">
+                                <div className="text-[10px] text-stone-400 font-mono mt-0.5">
+                                  Doluluk: {totalEnrolled}/{totalCap}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-[11px] bg-stone-50 p-2 rounded-xl flex items-center justify-between border border-stone-200/60">
+                              <span className="text-stone-500">Takip Eden Öğrenci:</span>
+                              <span className="font-mono font-medium text-stone-800">{group.email}</span>
+                            </div>
+
+                            {/* Sections list in this group */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block">
+                                Takip Edilen Şubeler ({group.sections?.length || 0} CRN)
+                              </span>
+                              <div className="max-h-28 overflow-y-auto divide-y divide-stone-100 border border-stone-100 rounded-xl">
+                                {(group.sections || []).map((sec) => (
+                                  <div
+                                    key={sec.crn}
+                                    className="px-2 py-1.5 text-[11px] flex items-center justify-between hover:bg-stone-50"
+                                  >
+                                    <div className="flex items-center gap-1.5 font-mono">
+                                      <span className="font-bold text-stone-900">{sec.crn}</span>
+                                      <span className="text-stone-400">•</span>
+                                      <span className="text-stone-600 truncate max-w-[120px]">{sec.instructor}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className={`font-mono font-bold text-[10px] px-1.5 py-0.5 rounded ${
+                                          sec.availableSeats > 0 ? 'bg-emerald-100 text-emerald-800' : 'text-stone-500'
+                                        }`}
+                                      >
+                                        {sec.availableSeats} Boş ({sec.enrolled}/{sec.capacity})
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Simulation & Admin Controls */}
+                            <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1">
+                                {onSimulateNewCrn && (
                                   <button
-                                    onClick={() => onForceCheckMonitor(mon.id)}
+                                    onClick={() => onSimulateNewCrn(group.courseCode)}
+                                    title="Yeni Şube (CRN) Açıldı Simülasyonu"
+                                    className="px-2 py-1 text-[11px] font-bold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
+                                  >
+                                    CRN+
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {onForceCheckGroup && (
+                                  <button
+                                    onClick={() => onForceCheckGroup(group.id)}
                                     title="Şimdi Kontrol Et"
                                     className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
                                   >
                                     <RefreshCw className="w-3.5 h-3.5" />
                                   </button>
+                                )}
+                                {onTogglePauseGroup && (
                                   <button
-                                    onClick={() => onTogglePauseMonitor(mon.id)}
-                                    title={mon.status === 'active' ? 'Duraklat' : 'Devam Ettir'}
+                                    onClick={() => onTogglePauseGroup(group.id)}
+                                    title={group.status === 'active' ? 'Duraklat' : 'Devam Ettir'}
                                     className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
                                   >
-                                    {mon.status === 'active' ? (
+                                    {group.status === 'active' ? (
                                       <Pause className="w-3.5 h-3.5" />
                                     ) : (
                                       <Play className="w-3.5 h-3.5" />
                                     )}
                                   </button>
+                                )}
+                                {onDeleteGroup && (
                                   <button
-                                    onClick={() => onDeleteMonitor(mon.id)}
-                                    title="Takibi Kaldır"
+                                    onClick={() => onDeleteGroup(group.id)}
+                                    title="Grubu Kaldır"
                                     className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition-colors cursor-pointer"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
-                                </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 2: Single CRN Trackers Table */}
+                {(trackerSubTab === 'all' || trackerSubTab === 'single') && (
+                  <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs overflow-hidden">
+                    <div className="p-4 border-b border-stone-200 flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-stone-500" />
+                        <span>Tekil CRN Takipleri ({filteredMonitors.length})</span>
+                      </h3>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-50 text-stone-500 font-semibold border-b border-stone-200">
+                          <tr>
+                            <th className="py-3 px-4">CRN & Ders</th>
+                            <th className="py-3 px-4">Öğrenci & Bildirim</th>
+                            <th className="py-3 px-4">Kontenjan</th>
+                            <th className="py-3 px-4">Durum</th>
+                            <th className="py-3 px-4 text-center">Kontenjan Simülasyonu (Test)</th>
+                            <th className="py-3 px-4 text-right">Yönetici İşlemleri</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {filteredMonitors.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="py-8 text-center text-stone-400">
+                                Kriterlere uygun tekil CRN takip kaydı bulunamadı.
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          ) : (
+                            filteredMonitors.map((mon) => (
+                              <tr key={mon.id} className="hover:bg-stone-50/80 transition-colors">
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-stone-900 bg-stone-100 px-2 py-0.5 rounded">
+                                      {mon.crn}
+                                    </span>
+                                    <button
+                                      onClick={() => handleCopyCrn(mon.crn)}
+                                      title="CRN Kopyala"
+                                      className="text-stone-400 hover:text-stone-700 cursor-pointer"
+                                    >
+                                      {copiedId === mon.crn ? (
+                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                    <span className="font-semibold text-stone-800">{mon.courseCode}</span>
+                                  </div>
+                                  <div className="text-[11px] text-stone-500 truncate max-w-xs">{mon.courseTitle}</div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="font-medium text-stone-900">{mon.studentName || 'Öğrenci'}</div>
+                                  <div className="text-[11px] text-stone-500 font-mono">{mon.notificationEmail}</div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      className={`font-bold px-2 py-0.5 rounded-full text-[11px] ${
+                                        mon.availableSeats > 0
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : 'bg-stone-100 text-stone-600'
+                                      }`}
+                                    >
+                                      {mon.availableSeats} Boş
+                                    </span>
+                                    <span className="text-[11px] text-stone-400 font-mono">
+                                      ({mon.enrolled}/{mon.totalCapacity})
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                      mon.status === 'active'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        mon.status === 'active' ? 'bg-emerald-500' : 'bg-amber-500'
+                                      }`}
+                                    />
+                                    {mon.status === 'active' ? 'Takip Ediliyor' : 'Duraklatıldı'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <div className="inline-flex items-center gap-1">
+                                    {onSimulateDrop && (
+                                      <button
+                                        onClick={() => onSimulateDrop(mon.id)}
+                                        title="+1 Kontenjan Açıldı (Biri Dersi Bıraktı - E-posta Bildirimi Gönderir)"
+                                        className="px-2 py-1 text-[11px] font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors cursor-pointer"
+                                      >
+                                        +1 Bıraktı
+                                      </button>
+                                    )}
+                                    {onSimulateCapacityIncrease && (
+                                      <button
+                                        onClick={() => onSimulateCapacityIncrease(mon.id)}
+                                        title="+5 Kapasite Artışı (Bölüm Artırdı - E-posta Bildirimi Gönderir)"
+                                        className="px-2 py-1 text-[11px] font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-colors cursor-pointer"
+                                      >
+                                        +5 Artır
+                                      </button>
+                                    )}
+                                    {onSimulateClaim && (
+                                      <button
+                                        onClick={() => onSimulateClaim(mon.id)}
+                                        title="-1 Ders Alındı (Kontenjan Düştü)"
+                                        className="px-2 py-1 text-[11px] font-bold rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 transition-colors cursor-pointer"
+                                      >
+                                        -1 Alındı
+                                      </button>
+                                    )}
+                                    {onSimulateNewCrn && (
+                                      <button
+                                        onClick={() => onSimulateNewCrn(mon.trackedCourseCode || mon.courseCode)}
+                                        title="Yeni CRN Şube Simülasyonu"
+                                        className="px-2 py-1 text-[11px] font-bold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
+                                      >
+                                        CRN+
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => onForceCheckMonitor(mon.id)}
+                                      title="Şimdi Kontrol Et"
+                                      className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => onTogglePauseMonitor(mon.id)}
+                                      title={mon.status === 'active' ? 'Duraklat' : 'Devam Ettir'}
+                                      className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                                    >
+                                      {mon.status === 'active' ? (
+                                        <Pause className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Play className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={() => onDeleteMonitor(mon.id)}
+                                      title="Takibi Kaldır"
+                                      className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
-            {/* TAB: Kayıtlı Kullanıcı Hesapları (Database) */}
+            {/* TAB 2: Kayıtlı Kullanıcı Hesapları & Takip Ettikleri Dersler */}
             {activeTab === 'users' && (
               <div className="space-y-6">
                 {/* Header & Actions */}
@@ -816,17 +1232,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         </span>
                       </div>
                       <p className="text-xs text-stone-500 mt-1">
-                        Sistemde kayıtlı öğrencilerin listesi. Bir hesabın şifresini veya bilgilerini değiştirmek için üzerine tıklayınız.
+                        Sistemde kayıtlı öğrencilerin listesi, bölümleri ve takip ettikleri tüm dersler.
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={refreshUsersList}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer"
+                        onClick={refreshAllAdminData}
+                        disabled={isRefreshing}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer disabled:opacity-50"
                         title="Listeyi Yenile"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
+                        <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
                         <span>Yenile</span>
                       </button>
                     </div>
@@ -840,7 +1257,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   )}
 
                   {/* Summary Metrics */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
                     <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
                       <span className="text-[11px] font-medium text-stone-500 block">Toplam Kayıtlı Kullanıcı</span>
                       <span className="text-2xl font-bold text-stone-900 mt-1 block">{users.length}</span>
@@ -848,12 +1265,18 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
                       <span className="text-[11px] font-medium text-stone-500 block">E-postası Doğrulanmış</span>
                       <span className="text-2xl font-bold text-emerald-600 mt-1 block">
-                        {users.filter((u) => u.isVerified !== false).length}
+                        {(users || []).filter((u) => u.isVerified !== false).length}
                       </span>
                     </div>
                     <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
-                      <span className="text-[11px] font-medium text-stone-500 block">Aktif Takipçi Dersi</span>
-                      <span className="text-2xl font-bold text-stone-900 mt-1 block">{monitors.length}</span>
+                      <span className="text-[11px] font-medium text-stone-500 block">Toplam Takip Edilen Ders</span>
+                      <span className="text-2xl font-bold text-stone-900 mt-1 block">
+                        {allMonitors.length + allGroups.length}
+                      </span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <span className="text-[11px] font-medium text-stone-500 block">Aktif Boş Kontenjan</span>
+                      <span className="text-2xl font-bold text-amber-600 mt-1 block">{openSeatsCount}</span>
                     </div>
                   </div>
 
@@ -863,7 +1286,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     <input
                       id="admin-user-search-input"
                       type="text"
-                      placeholder="Kullanıcı adı, e-posta veya ID ile ara..."
+                      placeholder="Kullanıcı adı, e-posta, bölüm (örn: CEV) veya ID ile ara..."
                       value={userSearch}
                       onChange={(e) => setUserSearch(e.target.value)}
                       className="w-full pl-9 pr-4 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white"
@@ -877,6 +1300,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         <tr>
                           <th className="py-3 px-4">Kullanıcı / Ad Soyad</th>
                           <th className="py-3 px-4">E-posta Adresi</th>
+                          <th className="py-3 px-4">Kayıtlı Bölümler</th>
+                          <th className="py-3 px-4">Takip Ettiği Dersler</th>
                           <th className="py-3 px-4">Şifre Durumu</th>
                           <th className="py-3 px-4">Kayıt Tarihi</th>
                           <th className="py-3 px-4 text-right">İşlem</th>
@@ -885,7 +1310,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       <tbody className="divide-y divide-stone-100">
                         {filteredUsers.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="py-12 text-center text-stone-400">
+                            <td colSpan={7} className="py-12 text-center text-stone-400">
                               <UserCheck className="w-8 h-8 text-stone-300 mx-auto mb-2" />
                               <p className="font-medium text-stone-600">Kayıtlı kullanıcı bulunamadı.</p>
                               <p className="text-[11px] text-stone-400 mt-1">
@@ -894,85 +1319,120 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                             </td>
                           </tr>
                         ) : (
-                          filteredUsers.map((user) => (
-                            <tr
-                              key={user.id || user.email}
-                              onClick={() => handleSelectUser(user)}
-                              className="hover:bg-stone-50/80 cursor-pointer transition-colors group"
-                            >
-                              <td className="py-3 px-4">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-full bg-stone-900 text-white font-bold flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
-                                    {(user.name || user.email || 'U').charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-stone-900 leading-tight">
-                                      {user.name || 'İsimsiz Kullanıcı'}
-                                    </div>
-                                    <div className="text-[10px] text-stone-400 font-mono">
-                                      ID: {user.id ? user.id.slice(0, 14) : 'local'}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
+                          filteredUsers.map((user) => {
+                            const userTrackerData = getUserTrackedInfo(user.email, user.id);
 
-                              <td className="py-3 px-4">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono text-stone-800">{user.email}</span>
-                                  {user.isVerified !== false ? (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
-                                      <Check className="w-2.5 h-2.5" />
-                                      Onaylı
+                            return (
+                              <tr
+                                key={String(user.id || user.email)}
+                                onClick={() => handleSelectUser(user)}
+                                className="hover:bg-stone-50/80 cursor-pointer transition-colors group"
+                              >
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-full bg-stone-900 text-white font-bold flex items-center justify-center text-xs shrink-0 group-hover:scale-105 transition-transform">
+                                      {(user.name || user.email || 'U').charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <div className="font-bold text-stone-900 leading-tight">
+                                        {user.name || 'İsimsiz Kullanıcı'}
+                                      </div>
+                                      <div className="text-[10px] text-stone-400 font-mono">
+                                        ID: {String(user.id || 'usr').slice(0, 14)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono text-stone-800">{user.email}</span>
+                                    {user.isVerified !== false ? (
+                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                                        <Check className="w-2.5 h-2.5" />
+                                        Onaylı
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
+                                        Onaysız
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td className="py-3 px-4">
+                                  {user.enrolledPrograms && user.enrolledPrograms.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {user.enrolledPrograms.map((p) => (
+                                        <span
+                                          key={p.code}
+                                          className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200"
+                                        >
+                                          {p.code}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-stone-400 italic">Tanımlanmamış</span>
+                                  )}
+                                </td>
+
+                                <td className="py-3 px-4">
+                                  {userTrackerData.totalCrns > 0 ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-xs px-2 py-0.5 rounded-full bg-stone-900 text-white font-mono">
+                                        {userTrackerData.totalGroups > 0
+                                          ? `${userTrackerData.totalGroups} Ders / ${userTrackerData.totalCrns} CRN`
+                                          : `${userTrackerData.totalCrns} CRN`}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[11px] text-stone-400">Takip Yok</span>
+                                  )}
+                                </td>
+
+                                <td className="py-3 px-4 font-mono text-[11px]">
+                                  {user.password ? (
+                                    <span className="inline-flex items-center gap-1 text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md text-[10px]">
+                                      <KeyRound className="w-3 h-3 text-stone-400" />
+                                      <span>••••••••</span>
                                     </span>
                                   ) : (
-                                    <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200">
-                                      Onaysız
-                                    </span>
+                                    <span className="text-amber-600 text-[10px]">Şifre Belirlenmemiş</span>
                                   )}
-                                </div>
-                              </td>
+                                </td>
 
-                              <td className="py-3 px-4 font-mono text-[11px]">
-                                {user.password ? (
-                                  <span className="inline-flex items-center gap-1 text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md text-[10px]">
-                                    <KeyRound className="w-3 h-3 text-stone-400" />
-                                    <span>••••••••</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-amber-600 text-[10px]">Şifre Belirlenmemiş</span>
-                                )}
-                              </td>
+                                <td className="py-3 px-4 text-stone-500 font-mono text-[11px]">
+                                  {formatSafeDate(user.createdAt)}
+                                </td>
 
-                              <td className="py-3 px-4 text-stone-500 font-mono text-[11px]">
-                                {user.createdAt ? new Date(user.createdAt).toLocaleDateString('tr-TR') : 'Bilinmiyor'}
-                              </td>
-
-                              <td className="py-3 px-4 text-right">
-                                <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => handleSelectUser(user)}
-                                    className="px-2.5 py-1 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-900 hover:text-white rounded-lg transition-colors cursor-pointer"
-                                  >
-                                    Şifre / Düzenle
-                                  </button>
-                                  <button
-                                    onClick={() => handleAdminDeleteUser(user)}
-                                    title="Kullanıcıyı Sil"
-                                    className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => handleSelectUser(user)}
+                                      className="px-2.5 py-1 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-900 hover:text-white rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      Şifre & Dersleri Gör
+                                    </button>
+                                    <button
+                                      onClick={() => handleAdminDeleteUser(user)}
+                                      title="Kullanıcıyı Sil"
+                                      className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
                   </div>
                 </div>
 
-                {/* MODAL: Edit Selected Account & Password */}
+                {/* MODAL: Edit Selected Account, Password & View Tracked Classes */}
                 {selectedUser && (
                   <div
                     id="admin-user-edit-modal-overlay"
@@ -981,7 +1441,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   >
                     <div
                       id="admin-user-edit-card"
-                      className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-stone-200 overflow-hidden my-8"
+                      className="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-stone-200 overflow-hidden my-8"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {/* Modal Header */}
@@ -991,7 +1451,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                             <Key className="w-4 h-4 text-amber-400" />
                           </div>
                           <div>
-                            <h3 className="text-sm font-bold">Hesap ve Şifre Yönetimi</h3>
+                            <h3 className="text-sm font-bold">Hesap, Şifre ve Takip Edilen Dersler</h3>
                             <p className="text-[11px] text-stone-400 font-mono truncate max-w-xs">
                               {selectedUser.email}
                             </p>
@@ -1005,8 +1465,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         </button>
                       </div>
 
-                      {/* Modal Form */}
-                      <form onSubmit={handleSaveUserChanges} className="p-6 space-y-4">
+                      {/* Modal Form & Details */}
+                      <div className="max-h-[80vh] overflow-y-auto p-6 space-y-5">
                         {userSaveSuccess && (
                           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -1038,138 +1498,267 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                           </div>
                         )}
 
-                        {/* Name Input */}
-                        <div>
-                          <label className="block text-xs font-semibold text-stone-800 mb-1">
-                            Öğrenci Adı Soyadı
-                          </label>
-                          <input
-                            type="text"
-                            value={editUserName}
-                            onChange={(e) => setEditUserName(e.target.value)}
-                            className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
-                            placeholder="Örn: Ahmet Can"
-                          />
-                        </div>
+                        {/* SECTION: Öğrencinin Takip Ettiği Dersler (Highlighted) */}
+                        {(() => {
+                          const info = getUserTrackedInfo(selectedUser.email, selectedUser.id);
 
-                        {/* Email (Read-Only) */}
-                        <div>
-                          <label className="block text-xs font-semibold text-stone-800 mb-1">
-                            Kayıtlı E-posta Adresi
-                          </label>
-                          <input
-                            type="email"
-                            disabled
-                            value={selectedUser.email}
-                            className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-100 text-stone-500 font-mono cursor-not-allowed"
-                          />
-                        </div>
+                          return (
+                            <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-stone-900 flex items-center gap-2">
+                                  <BookOpen className="w-4 h-4 text-stone-700" />
+                                  <span>Öğrencinin Takip Ettiği Dersler</span>
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-900 text-white">
+                                    {info.totalCrns} CRN / {info.totalGroups} Grup
+                                  </span>
+                                </h4>
+                              </div>
 
-                        {/* Password Field & Controls */}
-                        <div className="p-4 rounded-xl bg-stone-50 border border-stone-200 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <label className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
-                              <Key className="w-3.5 h-3.5 text-stone-700" />
-                              <span>Hesap Şifresi (Görüntüle / Güncelle)</span>
+                              {info.totalCrns === 0 ? (
+                                <p className="text-xs text-stone-400 italic py-2">
+                                  Bu öğrenciye ait aktif veya duraklatılmış ders takibi bulunmamaktadır.
+                                </p>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  {/* Course Groups */}
+                                  {info.groups.map((grp) => {
+                                    const open = (grp.sections || []).reduce((acc, s) => acc + (s.availableSeats || 0), 0);
+
+                                    return (
+                                      <div
+                                        key={grp.id}
+                                        className="bg-white border border-stone-200/80 rounded-xl p-3 space-y-2"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-mono font-bold text-xs bg-stone-100 px-2 py-0.5 rounded">
+                                              {grp.courseCode}
+                                            </span>
+                                            <span className="text-xs font-semibold text-stone-800 line-clamp-1">
+                                              {grp.courseTitle}
+                                            </span>
+                                          </div>
+                                          <span
+                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                              open > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600'
+                                            }`}
+                                          >
+                                            {open > 0 ? `🚨 ${open} Boş Kontenjan` : 'Kontenjan Dolu'}
+                                          </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[11px] pt-1">
+                                          {(grp.sections || []).map((s) => (
+                                            <div
+                                              key={s.crn}
+                                              className="p-1.5 bg-stone-50 rounded-lg border border-stone-100 flex items-center justify-between"
+                                            >
+                                              <span className="font-mono font-bold text-stone-800">{s.crn}</span>
+                                              <span
+                                                className={`text-[10px] font-mono font-bold ${
+                                                  s.availableSeats > 0 ? 'text-emerald-700' : 'text-stone-500'
+                                                }`}
+                                              >
+                                                {s.availableSeats} Boş ({s.enrolled}/{s.capacity})
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+
+                                  {/* Single CRN Monitors */}
+                                  {info.monitors.map((mon) => (
+                                    <div
+                                      key={mon.id}
+                                      className="bg-white border border-stone-200/80 rounded-xl p-3 flex items-center justify-between"
+                                    >
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-mono font-bold text-xs bg-stone-100 px-2 py-0.5 rounded">
+                                            {mon.crn}
+                                          </span>
+                                          <span className="text-xs font-semibold text-stone-800">
+                                            {mon.courseCode}
+                                          </span>
+                                        </div>
+                                        <div className="text-[11px] text-stone-500 line-clamp-1 mt-0.5">
+                                          {mon.courseTitle} • {mon.instructor}
+                                        </div>
+                                      </div>
+
+                                      <div className="text-right">
+                                        <span
+                                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            mon.availableSeats > 0
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : 'bg-stone-100 text-stone-600'
+                                          }`}
+                                        >
+                                          {mon.availableSeats} Boş ({mon.enrolled}/{mon.totalCapacity})
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Account Edit Form */}
+                        <form onSubmit={handleSaveUserChanges} className="space-y-4 pt-2">
+                          {/* Name Input */}
+                          <div>
+                            <label className="block text-xs font-semibold text-stone-800 mb-1">
+                              Öğrenci Adı Soyadı
                             </label>
-                            <button
-                              type="button"
-                              onClick={handleGenerateRandomPassword}
-                              className="text-[11px] font-semibold text-stone-900 hover:underline cursor-pointer"
-                            >
-                              ⚡ Rastgele Şifre Üret
-                            </button>
-                          </div>
-
-                          <div className="relative">
                             <input
-                              type={showPasswordInModal ? 'text' : 'password'}
-                              value={editUserPassword}
-                              onChange={(e) => setEditUserPassword(e.target.value)}
-                              placeholder="Kullanıcının yeni şifresini yazınız..."
-                              className="w-full pl-3 pr-10 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white font-mono"
+                              type="text"
+                              value={editUserName}
+                              onChange={(e) => setEditUserName(e.target.value)}
+                              className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
+                              placeholder="Örn: Ahmet Can"
                             />
-                            <button
-                              type="button"
-                              onClick={() => setShowPasswordInModal(!showPasswordInModal)}
-                              className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-700"
-                              title={showPasswordInModal ? 'Şifreyi Gizle' : 'Şifreyi Göster'}
-                            >
-                              {showPasswordInModal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
                           </div>
 
-                          <p className="text-[11px] text-stone-500">
-                            Buradan kullanıcının şifresini doğrudan değiştirebilir veya öğrenciye sıfırlama kodu gönderebilirsiniz.
-                          </p>
+                          {/* Email (Read-Only) */}
+                          <div>
+                            <label className="block text-xs font-semibold text-stone-800 mb-1">
+                              Kayıtlı E-posta Adresi
+                            </label>
+                            <input
+                              type="email"
+                              disabled
+                              value={selectedUser.email}
+                              className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 bg-stone-100 text-stone-500 font-mono cursor-not-allowed"
+                            />
+                          </div>
 
-                          {/* Quick Password Reset Email Trigger */}
-                          <div className="pt-2 border-t border-stone-200 flex items-center justify-between gap-2">
-                            <span className="text-[11px] text-stone-600">
-                              Kullanıcının e-postasına sıfırlama bağlantısı gönder:
-                            </span>
+                          {/* Enrolled Programs */}
+                          <div>
+                            <label className="block text-xs font-semibold text-stone-800 mb-1">
+                              Kayıtlı Programlar / Bölümler
+                            </label>
+                            {selectedUser.enrolledPrograms && selectedUser.enrolledPrograms.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5 p-2 bg-stone-50 rounded-xl border border-stone-200">
+                                {selectedUser.enrolledPrograms.map((p) => (
+                                  <span
+                                    key={p.code}
+                                    className="px-2 py-1 bg-blue-100 text-blue-800 text-[11px] font-semibold rounded-lg"
+                                  >
+                                    {p.code} - {p.nameTr}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-stone-400 italic">Henüz program seçimi yapılmamış.</p>
+                            )}
+                          </div>
+
+                          {/* Password Field & Controls */}
+                          <div className="p-4 rounded-xl bg-stone-50 border border-stone-200 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                <Key className="w-3.5 h-3.5 text-stone-700" />
+                                <span>Hesap Şifresi (Görüntüle / Güncelle)</span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleGenerateRandomPassword}
+                                className="text-[11px] font-semibold text-stone-900 hover:underline cursor-pointer"
+                              >
+                                ⚡ Rastgele Şifre Üret
+                              </button>
+                            </div>
+
+                            <div className="relative">
+                              <input
+                                type={showPasswordInModal ? 'text' : 'password'}
+                                value={editUserPassword}
+                                onChange={(e) => setEditUserPassword(e.target.value)}
+                                placeholder="Kullanıcının yeni şifresini yazınız..."
+                                className="w-full pl-3 pr-10 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white font-mono"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPasswordInModal(!showPasswordInModal)}
+                                className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-700"
+                                title={showPasswordInModal ? 'Şifreyi Gizle' : 'Şifreyi Göster'}
+                              >
+                                {showPasswordInModal ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+
+                            {/* Quick Password Reset Email Trigger */}
+                            <div className="pt-2 border-t border-stone-200 flex items-center justify-between gap-2">
+                              <span className="text-[11px] text-stone-600">
+                                Kullanıcının e-postasına sıfırlama bağlantısı gönder:
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isSendingResetEmail}
+                                onClick={handleAdminSendResetEmail}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-800 bg-white hover:bg-stone-100 border border-stone-300 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                <Send className="w-3 h-3 text-stone-600" />
+                                <span>{isSendingResetEmail ? 'Gönderiliyor...' : 'Sıfırlama Maili Gönder'}</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Verified Toggle */}
+                          <div className="flex items-center gap-2 pt-1">
+                            <input
+                              id="edit-user-verified"
+                              type="checkbox"
+                              checked={editUserVerified}
+                              onChange={(e) => setEditUserVerified(e.target.checked)}
+                              className="w-4 h-4 text-stone-900 rounded border-stone-300 focus:ring-stone-900"
+                            />
+                            <label htmlFor="edit-user-verified" className="text-xs font-medium text-stone-700 cursor-pointer">
+                              Hesap onaylı ve doğrulanmış (isVerified: true)
+                            </label>
+                          </div>
+
+                          {/* Modal Footer Buttons */}
+                          <div className="pt-4 border-t border-stone-100 flex items-center justify-between gap-2">
                             <button
                               type="button"
-                              disabled={isSendingResetEmail}
-                              onClick={handleAdminSendResetEmail}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-800 bg-white hover:bg-stone-100 border border-stone-300 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                              onClick={() => handleAdminDeleteUser(selectedUser)}
+                              className="px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1.5"
                             >
-                              <Send className="w-3 h-3 text-stone-600" />
-                              <span>{isSendingResetEmail ? 'Gönderiliyor...' : 'Sıfırlama Maili Gönder'}</span>
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hesabı Sil</span>
                             </button>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedUser(null)}
+                                className="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+                              >
+                                Kapat
+                              </button>
+                              <button
+                                type="submit"
+                                className="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                              >
+                                <Check className="w-4 h-4" />
+                                <span>Değişiklikleri Kaydet</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-
-                        {/* Verified Toggle */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <input
-                            id="edit-user-verified"
-                            type="checkbox"
-                            checked={editUserVerified}
-                            onChange={(e) => setEditUserVerified(e.target.checked)}
-                            className="w-4 h-4 text-stone-900 rounded border-stone-300 focus:ring-stone-900"
-                          />
-                          <label htmlFor="edit-user-verified" className="text-xs font-medium text-stone-700 cursor-pointer">
-                            Hesap onaylı ve doğrulanmış (isVerified: true)
-                          </label>
-                        </div>
-
-                        {/* Modal Footer Buttons */}
-                        <div className="pt-4 border-t border-stone-100 flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAdminDeleteUser(selectedUser)}
-                            className="px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-1.5"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Hesabı Sil</span>
-                          </button>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedUser(null)}
-                              className="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
-                            >
-                              Kapat
-                            </button>
-                            <button
-                              type="submit"
-                              className="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
-                            >
-                              <Check className="w-4 h-4" />
-                              <span>Değişiklikleri Kaydet</span>
-                            </button>
-                          </div>
-                        </div>
-                      </form>
+                        </form>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* TAB: Source Scraper & Kaynak Ayarları */}
+            {/* TAB 3: Source Scraper & Kaynak Ayarları */}
             {activeTab === 'scraper' && (
               <div className="space-y-6">
                 {/* Header Information & Configuration Card */}
@@ -1185,7 +1774,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                             İTÜ OBS Kaynak Tarayıcı & Parser Yapılandırması (Source Scraper)
                           </h2>
                           <p className="text-xs text-stone-500">
-                            Bu alan yalnızca yöneticiler tarafından yapılandırılabilir. Arka plan botunun İTÜ OBS web sayfalarını nasıl tarayacağını ve CRN tablosunu nasıl ayrıştıracağını belirler.
+                            Bu alan yalnızca yöneticiler tarafından yapılandırılabilir. Arka plan botunun İTÜ OBS web sayfalarını nasıl tarayacağını belirler.
                           </p>
                         </div>
                       </div>
@@ -1350,12 +1939,12 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       {isScraperTesting ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Sorgulanıyor...</span>
+                          <span>Ayrıştırılıyor...</span>
                         </>
                       ) : (
                         <>
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Canlı Sorgula</span>
+                          <Code2 className="w-3.5 h-3.5" />
+                          <span>OBS'den Ayrıştır</span>
                         </>
                       )}
                     </button>
@@ -1365,216 +1954,59 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     <div
                       className={`p-4 rounded-xl border text-xs space-y-2 ${
                         scraperTestResult.success
-                          ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
                           : 'bg-rose-50 border-rose-200 text-rose-900'
                       }`}
                     >
-                      <div className="flex items-center gap-2 font-bold">
-                        {scraperTestResult.success ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold flex items-center gap-1.5">
+                          {scraperTestResult.success ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-600" />
+                          )}
+                          <span>{scraperTestResult.message}</span>
+                        </span>
+                        {scraperTestResult.durationMs && (
+                          <span className="font-mono text-[10px] text-stone-500">
+                            {scraperTestResult.durationMs}ms
+                          </span>
                         )}
-                        <span>{scraperTestResult.message}</span>
                       </div>
 
                       {scraperTestResult.data && (
-                        <div className="bg-white p-3 rounded-lg border border-emerald-100 text-stone-800 space-y-1 font-mono text-[11px]">
-                          <div><strong className="font-sans text-stone-600">CRN:</strong> {scraperTestResult.data.crn}</div>
-                          <div><strong className="font-sans text-stone-600">Ders Kodu:</strong> {scraperTestResult.data.courseCode}</div>
-                          <div><strong className="font-sans text-stone-600">Ders Adı:</strong> {scraperTestResult.data.courseTitle || '-'}</div>
-                          <div><strong className="font-sans text-stone-600">Kapasite:</strong> {scraperTestResult.data.totalCapacity} | <strong className="font-sans text-stone-600">Kayıtlı:</strong> {scraperTestResult.data.enrolled} | <strong className="font-sans text-stone-600">Kalan Kontenjan:</strong> <span className={scraperTestResult.data.availableSeats > 0 ? 'text-emerald-600 font-bold' : 'text-stone-600 font-bold'}>{scraperTestResult.data.availableSeats}</span></div>
-                          <div><strong className="font-sans text-stone-600">Kaynak Motoru:</strong> <span className="bg-stone-100 px-1 py-0.5 rounded text-stone-700">{scraperTestResult.data.source || 'live_itu_obs'}</span></div>
-                        </div>
+                        <pre className="p-3 bg-stone-900 text-stone-100 rounded-lg text-[11px] font-mono overflow-x-auto">
+                          {JSON.stringify(scraperTestResult.data, null, 2)}
+                        </pre>
                       )}
                     </div>
                   )}
                 </div>
-
-                {/* Live Extracted Table Preview (Moved from Footer) */}
-                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-stone-700" />
-                        <span>Ayrıştırılan CRN Kontenjan Tablosu (Source Web Page Table & CRN Parser)</span>
-                      </h3>
-                      <p className="text-xs text-stone-500 mt-1">
-                        Sistemde aktif olarak takip edilen ve web ayrıştırıcısı tarafından anlık kontrol edilen dersler.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="relative">
-                        <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-2" />
-                        <input
-                          type="text"
-                          placeholder="CRN veya Ders Filtrele..."
-                          value={scraperTableFilter}
-                          onChange={(e) => setScraperTableFilter(e.target.value)}
-                          className="pl-8 pr-3 py-1 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 w-48 font-mono"
-                        />
-                      </div>
-                      <span className="text-xs text-stone-400 font-mono">
-                        {monitors.length} Kayıt
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-stone-200 overflow-hidden shadow-2xs">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-stone-100 text-stone-700 font-semibold border-b border-stone-200 uppercase text-[10px] tracking-wider font-mono">
-                          <tr>
-                            <th className="py-2.5 px-3">CRN</th>
-                            <th className="py-2.5 px-3">Ders Kodu</th>
-                            <th className="py-2.5 px-3">Ders Adı</th>
-                            <th className="py-2.5 px-3 text-center">Kapasite</th>
-                            <th className="py-2.5 px-3 text-center">Kayıtlı</th>
-                            <th className="py-2.5 px-3 text-center">Kalan Boş</th>
-                            <th className="py-2.5 px-3">Durum</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-200 font-sans">
-                          {monitors.length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="py-6 text-center text-stone-400 font-sans">
-                                Henüz takip edilen aktif bir CRN bulunmuyor.
-                              </td>
-                            </tr>
-                          ) : (
-                            monitors
-                              .filter((m) =>
-                                !scraperTableFilter ||
-                                m.crn.includes(scraperTableFilter) ||
-                                m.courseCode.toLowerCase().includes(scraperTableFilter.toLowerCase()) ||
-                                m.courseTitle.toLowerCase().includes(scraperTableFilter.toLowerCase())
-                              )
-                              .map((m) => {
-                                const isSeatOpen = m.availableSeats > 0;
-                                return (
-                                  <tr
-                                    key={m.id}
-                                    className={`hover:bg-stone-50 transition-colors ${
-                                      isSeatOpen ? 'bg-emerald-50/40 font-medium' : ''
-                                    }`}
-                                  >
-                                    <td className="py-2.5 px-3 font-mono font-bold text-stone-900">
-                                      {m.crn}
-                                    </td>
-                                    <td className="py-2.5 px-3 font-semibold text-stone-800">
-                                      {m.courseCode}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-stone-600 max-w-[200px] truncate">
-                                      {m.courseTitle}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-center font-mono text-stone-600">
-                                      {m.totalCapacity}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-center font-mono text-stone-600">
-                                      {m.enrolled}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-center font-mono font-bold">
-                                      <span
-                                        className={`px-2 py-0.5 rounded-full text-xs ${
-                                          isSeatOpen
-                                            ? 'bg-emerald-100 text-emerald-800 font-extrabold'
-                                            : 'bg-stone-100 text-stone-600'
-                                        }`}
-                                      >
-                                        {m.availableSeats}
-                                      </span>
-                                    </td>
-                                    <td className="py-2.5 px-3">
-                                      {isSeatOpen ? (
-                                        <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
-                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                          KONTENJAN AÇIK
-                                        </span>
-                                      ) : (
-                                        <span className="text-[11px] text-stone-500">DOLU</span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-600 leading-relaxed">
-                    <strong className="text-stone-800">Tarayıcı motoru nasıl çalışır?</strong> Sistem arka planda belirlenen periyotta hedef İTÜ OBS web sayfasına HTTP isteği atar, HTML tablo satırları arasından <code className="bg-stone-200 px-1 py-0.5 rounded text-[11px] font-mono">CRN</code> hücresini eşleştirir, Kapasite ve Kayıtlı öğrenci sayılarını çıkarır. Eğer kontenjan sayısı artarsa, öğrencinin e-postasına anında bildirim gönderir.
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* TAB 2: SMTP / E-posta Sunucu Ayarları */}
+            {/* TAB 4: Email SMTP Sunucu Ayarları */}
             {activeTab === 'email_account' && (
               <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-6">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-stone-900">SMTP Sunucusu ve Gönderici Ayarları</h2>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
-                      Ortak SMTP Motoru
-                    </span>
-                  </div>
+                  <h2 className="text-base font-bold text-stone-900">
+                    Sistem SMTP E-posta Gönderim Yapılandırması
+                  </h2>
                   <p className="text-xs text-stone-500 mt-1">
-                    Bu panelde yapılandırılan SMTP sunucusu, <strong>hem normal kontenjan bildirimlerinde</strong> hem de yeni kayıt olan öğrencilere giden <strong>6 haneli doğrulama kodu e-postalarında</strong> ortak olarak kullanılır.
+                    Kontenjan açıldığında öğrencilere bildirim e-postalarını göndermek için kullanılacak SMTP hesabı.
                   </p>
                 </div>
 
                 {emailConfigSavedToast && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>
-                      SMTP ayarları başarıyla kaydedildi ve sunucuya aktarıldı. Artık hem doğrulama kodları hem de kontenjan uyarıları bu SMTP üzerinden iletilecektir.
-                    </span>
+                    <span>SMTP ayarları başarıyla kaydedildi.</span>
                   </div>
                 )}
 
-                <form onSubmit={handleSaveEmailConfig} className="space-y-4">
+                <form onSubmit={handleSaveEmailConfig} className="space-y-4 max-w-2xl">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-stone-800 mb-1">
-                        Gönderici E-posta Adresi (From / Sender Email)
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editedEmailConfig.senderAddress}
-                        onChange={(e) =>
-                          setEditedEmailConfig({ ...editedEmailConfig, senderAddress: e.target.value })
-                        }
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
-                        placeholder="ayvali@itu.edu.tr veya ba7eed001@smtp-brevo.com"
-                      />
-                      <p className="text-[10px] text-stone-400 mt-1">
-                        Alıcıların gelen kutusunda göreceği gönderici adresi
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-stone-800 mb-1">
-                        Gönderici Görünen Adı (From Name)
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={editedEmailConfig.senderName}
-                        onChange={(e) =>
-                          setEditedEmailConfig({ ...editedEmailConfig, senderName: e.target.value })
-                        }
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
-                        placeholder="İTÜ OBS Quota Alert System"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="sm:col-span-2">
                       <label className="block text-xs font-semibold text-stone-800 mb-1">
                         SMTP Sunucu Adresi (Host)
                       </label>
@@ -1582,25 +2014,20 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         type="text"
                         required
                         value={editedEmailConfig.smtpHost}
-                        onChange={(e) =>
-                          setEditedEmailConfig({ ...editedEmailConfig, smtpHost: e.target.value })
-                        }
+                        onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, smtpHost: e.target.value })}
                         className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
-                        placeholder="smtp-relay.brevo.com veya smtp.gmail.com"
+                        placeholder="smtp-relay.brevo.com"
                       />
                     </div>
-
                     <div>
                       <label className="block text-xs font-semibold text-stone-800 mb-1">
-                        SMTP Portu
+                        Port & Güvenlik
                       </label>
                       <input
                         type="number"
                         required
                         value={editedEmailConfig.smtpPort}
-                        onChange={(e) =>
-                          setEditedEmailConfig({ ...editedEmailConfig, smtpPort: parseInt(e.target.value, 10) || 587 })
-                        }
+                        onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, smtpPort: Number(e.target.value) })}
                         className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
                         placeholder="587"
                       />
@@ -1610,109 +2037,121 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-stone-800 mb-1">
-                        SMTP Kullanıcı Adı (Username / Login)
+                        SMTP Kullanıcı Adı / Giriş E-postası
                       </label>
                       <input
                         type="text"
                         required
                         value={editedEmailConfig.smtpUsername}
-                        onChange={(e) =>
-                          setEditedEmailConfig({ ...editedEmailConfig, smtpUsername: e.target.value })
-                        }
+                        onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, smtpUsername: e.target.value })}
                         className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
-                        placeholder="ba7eed001@smtp-brevo.com"
                       />
                     </div>
-
                     <div>
                       <label className="block text-xs font-semibold text-stone-800 mb-1">
-                        SMTP Şifresi / API Anahtarı
+                        SMTP Parolası / API Anahtarı
                       </label>
-                      <PasswordInput
-                        id="admin-smtp-password"
+                      <input
+                        type="password"
                         required
-                        placeholder="SMTP şifreniz..."
                         value={editedEmailConfig.smtpPassword || ''}
-                        onChange={(e) =>
-                          setEditedEmailConfig({ ...editedEmailConfig, smtpPassword: e.target.value })
-                        }
+                        onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, smtpPassword: e.target.value })}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
                       />
                     </div>
                   </div>
 
-                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-800 mb-1">
+                        Gönderen Adı
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={editedEmailConfig.senderName}
+                        onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, senderName: e.target.value })}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
+                        placeholder="İTÜ OBS Kontenjan Uyarı Sistemi"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-800 mb-1">
+                        Gönderen E-posta Adresi (From)
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={editedEmailConfig.senderAddress}
+                        onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, senderAddress: e.target.value })}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
+                        placeholder="itu.ders.kayit@gmail.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 flex flex-wrap items-center justify-between gap-3 border-t border-stone-100">
                     <button
-                      id="admin-save-smtp-btn"
-                      type="submit"
-                      className="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
+                      type="button"
+                      onClick={handleTestSmtpConnection}
+                      disabled={smtpTesting}
+                      className="px-4 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors cursor-pointer inline-flex items-center gap-2"
                     >
-                      <Check className="w-4 h-4" />
-                      <span>SMTP Ayarlarını Kaydet & Sunucuya Uygula</span>
+                      {smtpTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      <span>SMTP Bağlantısını Test Et</span>
                     </button>
 
                     <button
-                      id="admin-test-connection-btn"
-                      type="button"
-                      disabled={smtpTesting}
-                      onClick={handleTestSmtpConnection}
-                      className="px-4 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition-all cursor-pointer inline-flex items-center gap-2 disabled:opacity-50"
+                      type="submit"
+                      className="px-5 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2"
                     >
-                      {smtpTesting ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      )}
-                      <span>SMTP Bağlantısını Test Et</span>
+                      <Check className="w-4 h-4" />
+                      <span>SMTP Ayarlarını Kaydet</span>
                     </button>
                   </div>
                 </form>
 
-                {/* Test Connection Output */}
                 {smtpTestResult && (
                   <div
-                    className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 ${
+                    className={`p-3 rounded-xl border text-xs max-w-2xl flex items-center gap-2 ${
                       smtpTestResult.success
                         ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                         : 'bg-rose-50 border-rose-200 text-rose-800'
                     }`}
                   >
                     {smtpTestResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                     )}
-                    <div>
-                      <span className="font-bold block">
-                        {smtpTestResult.success ? 'Bağlantı Başarılı!' : 'Bağlantı Hatası!'}
-                      </span>
-                      <span>{smtpTestResult.message}</span>
-                    </div>
+                    <span>{smtpTestResult.message}</span>
                   </div>
                 )}
 
-                {/* Trigger Real Test Email */}
-                <div className="pt-4 border-t border-stone-100">
-                  <h3 className="text-xs font-bold text-stone-800 mb-2">Canlı Test E-postası Gönder</h3>
-                  <div className="flex flex-col sm:flex-row gap-2 max-w-md">
+                {/* Direct Test Email Dispatch */}
+                <div className="p-4 rounded-xl bg-stone-50 border border-stone-200 space-y-3 max-w-2xl">
+                  <h4 className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-stone-700" />
+                    <span>Doğrudan Test E-postası Gönder</span>
+                  </h4>
+                  <div className="flex gap-2">
                     <input
                       type="email"
                       value={testEmailRecipient}
                       onChange={(e) => setTestEmailRecipient(e.target.value)}
-                      placeholder="test@itu.edu.tr"
-                      className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
+                      placeholder="alici@itu.edu.tr"
+                      className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 bg-white font-mono"
                     />
                     <button
-                      id="admin-send-test-email-btn"
                       type="button"
                       onClick={handleTriggerTestEmail}
-                      className="px-3.5 py-1.5 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                      className="px-4 py-1.5 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition-colors cursor-pointer shrink-0"
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Test Maili Gönder</span>
+                      Test E-postası Gönder
                     </button>
                   </div>
                   {testEmailSentToast && (
-                    <p className="text-[11px] text-emerald-600 font-medium mt-1.5">
+                    <p className="text-[11px] text-emerald-600 font-medium">
                       ✓ Test e-postası {testEmailRecipient} adresine iletildi.
                     </p>
                   )}
@@ -1720,70 +2159,70 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </div>
             )}
 
-            {/* TAB 3: Audit Logs */}
+            {/* TAB 5: Denetim Günlükleri */}
             {activeTab === 'audit_logs' && (
-              <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-4">
-                <div>
-                  <h2 className="text-base font-bold text-stone-900">Sistem Denetim Günlüğü</h2>
-                  <p className="text-xs text-stone-500 mt-1">
-                    Kontenjan değişiklikleri ve iletilen e-posta bildirimlerinin tam zamanlı tarihçesi.
-                  </p>
+              <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs overflow-hidden">
+                <div className="p-6 border-b border-stone-200 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-900">Sistem Denetim ve Kontenjan Değişim Günlükleri</h3>
+                    <p className="text-xs text-stone-500 mt-1">
+                      Öğrencilere gönderilen e-postalar ve otomatik tespit edilen kontenjan değişimleri.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-700">
+                    {allHistoryEvents.length} Kayıt
+                  </span>
                 </div>
 
-                <div className="overflow-hidden border border-stone-200 rounded-xl">
+                <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-stone-50 text-stone-500 font-semibold border-b border-stone-200">
                       <tr>
-                        <th className="py-2.5 px-3">Zaman</th>
-                        <th className="py-2.5 px-3">Ders / CRN</th>
-                        <th className="py-2.5 px-3">Değişim</th>
-                        <th className="py-2.5 px-3">Öğrenci / Bildirim</th>
-                        <th className="py-2.5 px-3 text-right">E-posta İletimi</th>
+                        <th className="py-3 px-4">Tarih / Zaman</th>
+                        <th className="py-3 px-4">Ders / CRN</th>
+                        <th className="py-3 px-4">Öğrenci</th>
+                        <th className="py-3 px-4">Değişim</th>
+                        <th className="py-3 px-4">E-posta Bildirimi</th>
+                        <th className="py-3 px-4">Notlar</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
+                    <tbody className="divide-y divide-stone-100">
                       {allHistoryEvents.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="py-6 text-center text-stone-400 font-sans">
-                            Henüz kayıtlı bir denetim olayı gerçekleşmedi.
+                          <td colSpan={6} className="py-8 text-center text-stone-400">
+                            Henüz kayıtlı bir denetim günlüğü bulunmuyor.
                           </td>
                         </tr>
                       ) : (
-                        allHistoryEvents.slice(0, 50).map(({ event: h, monitor: m }) => (
-                          <tr key={h.id} className="hover:bg-stone-50 transition-colors">
-                            <td className="py-2.5 px-3 text-stone-500">
-                              {new Date(h.timestamp).toLocaleTimeString('tr-TR')}
+                        allHistoryEvents.map(({ event, monitorTitle, studentEmail }) => (
+                          <tr key={event.id} className="hover:bg-stone-50">
+                            <td className="py-3 px-4 font-mono text-stone-500">
+                              {new Date(event.timestamp).toLocaleString('tr-TR')}
                             </td>
-                            <td className="py-2.5 px-3 font-sans">
-                              <span className="font-bold text-stone-900">{m.courseCode}</span>{' '}
-                              <span className="text-stone-400 font-mono">({m.crn})</span>
-                            </td>
-                            <td className="py-2.5 px-3">
+                            <td className="py-3 px-4 font-semibold text-stone-800">{monitorTitle}</td>
+                            <td className="py-3 px-4 font-mono text-stone-600">{studentEmail}</td>
+                            <td className="py-3 px-4">
                               <span
-                                className={`font-semibold ${
-                                  h.type === 'increased'
-                                    ? 'text-emerald-600'
-                                    : h.type === 'decreased'
-                                    ? 'text-rose-600'
-                                    : 'text-stone-600'
+                                className={`font-mono font-bold px-2 py-0.5 rounded ${
+                                  event.newAvailable > event.oldAvailable
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-stone-100 text-stone-700'
                                 }`}
                               >
-                                {h.oldAvailable} → {h.newAvailable}
+                                {event.oldAvailable} → {event.newAvailable}
                               </span>
                             </td>
-                            <td className="py-2.5 px-3 font-sans truncate max-w-xs text-stone-600">
-                              {h.emailRecipient}
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-sans">
-                              {h.emailDispatched ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                  Gönderildi
+                            <td className="py-3 px-4">
+                              {event.emailDispatched ? (
+                                <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
+                                  <Check className="w-3.5 h-3.5" />
+                                  İletildi
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-stone-400">Gönderilmedi</span>
+                                <span className="text-stone-400">—</span>
                               )}
                             </td>
+                            <td className="py-3 px-4 text-stone-500 max-w-xs truncate">{event.notes || '—'}</td>
                           </tr>
                         ))
                       )}
@@ -1793,44 +2232,43 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               </div>
             )}
 
-            {/* TAB 4: Security */}
+            {/* TAB 6: Güvenlik ve Parola */}
             {activeTab === 'security' && (
-              <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-6 max-w-xl">
+              <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-6 max-w-lg">
                 <div>
-                  <h2 className="text-base font-bold text-stone-900">Yönetici Ana Parolasını Değiştir</h2>
+                  <h2 className="text-base font-bold text-stone-900">Yönetici Güvenlik Parolası</h2>
                   <p className="text-xs text-stone-500 mt-1">
-                    Bu yönetim paneline (/admin) erişim için kullanılan yönetici şifresini güncelleyiniz.
+                    Bu sayfaya giriş için kullanılan yönetici ana parolasını güncelleyebilirsiniz.
                   </p>
                 </div>
 
                 {passwordChangeSuccess && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Yönetici parolası başarıyla güncellendi!</span>
+                    <span>Yönetici parolası başarıyla güncellendi.</span>
                   </div>
                 )}
 
                 <form onSubmit={handleChangePassword} className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-stone-800 mb-1">
-                      Yeni Yönetici Parolası (En az 8 karakter)
+                      Yeni Yönetici Parolası
                     </label>
-                    <PasswordInput
-                      id="new-admin-password"
+                    <input
+                      type="password"
                       required
-                      placeholder="Yeni parolanız..."
                       value={newAdminPassword}
                       onChange={(e) => setNewAdminPassword(e.target.value)}
+                      placeholder="En az 8 karakter..."
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
                     />
                   </div>
 
                   <button
-                    id="btn-save-admin-password"
                     type="submit"
-                    className="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition-all shadow-xs cursor-pointer inline-flex items-center gap-2"
+                    className="px-5 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl shadow-xs transition-colors cursor-pointer"
                   >
-                    <Key className="w-4 h-4" />
-                    <span>Parolayı Güncelle</span>
+                    Parolayı Güncelle
                   </button>
                 </form>
               </div>

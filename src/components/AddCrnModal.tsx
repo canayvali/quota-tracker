@@ -197,7 +197,13 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
     }
   };
 
-  const executeAddCourseGroup = (coursesToTrack: ItuCourse[], normCode: string, repTitle: string, notePrefix = '') => {
+  const executeAddCourseGroup = (
+    coursesToTrack: ItuCourse[],
+    normCode: string,
+    repTitle: string,
+    notePrefix = '',
+    allDiscoveredCourses?: ItuCourse[]
+  ) => {
     const sections: CourseGroupSection[] = coursesToTrack.map((c) => ({
       crn: c.crn,
       courseCode: c.courseCode,
@@ -218,6 +224,9 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
     const totalInitialAvailable = sections.reduce((acc, s) => acc + s.availableSeats, 0);
     const totalInitialEnrolled = sections.reduce((acc, s) => acc + s.enrolled, 0);
 
+    const sourceCourses = allDiscoveredCourses && allDiscoveredCourses.length > 0 ? allDiscoveredCourses : coursesToTrack;
+    const allKnownCrns = Array.from(new Set(sourceCourses.map((c) => c.crn)));
+
     const newGroup: TrackedCourseGroup = {
       id: 'grp-' + Date.now(),
       courseCode: normCode,
@@ -226,7 +235,7 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
       email: currentUser.email,
       deliveryFilter: deliveryFilter,
       sections: sections,
-      knownCrns: coursesToTrack.map((c) => c.crn),
+      knownCrns: allKnownCrns,
       status: 'active',
       createdAt: new Date().toISOString(),
       lastChecked: new Date().toISOString(),
@@ -326,7 +335,8 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
             eligibleCourses,
             normalizedCode,
             representativeTitle,
-            `${eligibleCourses.length} şube takibe alındı.`
+            `${eligibleCourses.length} şube takibe alındı.`,
+            courses
           );
         }, 300);
         return;
@@ -754,7 +764,8 @@ export const AddCrnModal: React.FC<AddCrnModalProps> = ({
                               ineligibleGroupWarning.eligibleCourses,
                               ineligibleGroupWarning.courseCode,
                               ineligibleGroupWarning.representativeTitle,
-                              `Bölümünüze uygun ${ineligibleGroupWarning.eligibleCourses.length} şube takibe alındı.`
+                              `Bölümünüze uygun ${ineligibleGroupWarning.eligibleCourses.length} şube takibe alındı.`,
+                              ineligibleGroupWarning.allCourses
                             );
                           }}
                           className="px-3.5 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer"

@@ -15,7 +15,6 @@ import {
 
 import { AppLanguage, AppTheme, ClassMonitor, CourseGroupSection, EmailSenderConfig, GlobalSettings, ItuCourse, TeachingModeFilter, TrackedCourseGroup, UserAccount } from './types';
 import {
-  checkAdminAuth,
   clearCurrentUser,
   loadCurrentUser,
   loadEmailConfig,
@@ -221,6 +220,31 @@ export default function App() {
       const uid = currentUser.id || currentUser.email;
       syncUserDataFromCloudSql(uid).then((data) => {
         if (data && data.success) {
+          if (data.profile) {
+            setCurrentUser((prev) => {
+              if (!prev) return prev;
+              const hasPrograms =
+                (data.profile.enrolledPrograms && data.profile.enrolledPrograms.length > 0) ||
+                (prev.enrolledPrograms && prev.enrolledPrograms.length > 0);
+              const completedOnboarding =
+                data.profile.hasCompletedProgramOnboarding ??
+                (hasPrograms ? true : prev.hasCompletedProgramOnboarding);
+
+              const merged: UserAccount = {
+                ...prev,
+                name: data.profile.name || prev.name,
+                enrolledPrograms:
+                  data.profile.enrolledPrograms && data.profile.enrolledPrograms.length > 0
+                    ? data.profile.enrolledPrograms
+                    : prev.enrolledPrograms || [],
+                hasCompletedProgramOnboarding: completedOnboarding,
+                preferredLanguage: data.profile.preferredLanguage || prev.preferredLanguage,
+                theme: data.profile.theme || prev.theme,
+              };
+              saveCurrentUser(merged);
+              return merged;
+            });
+          }
           if (data.monitors && data.monitors.length > 0) {
             setMonitors((prev) => {
               const map = new Map(prev.map((m) => [m.id, m]));
@@ -260,16 +284,24 @@ export default function App() {
   };
 
   const handleLoginSuccess = (user: UserAccount) => {
-    setCurrentUser(user);
-    saveCurrentUser(user);
-    syncUserProfileToCloudSql(user);
-    const activeLang = user.preferredLanguage || language;
+    const hasPrograms = Array.isArray(user.enrolledPrograms) && user.enrolledPrograms.length > 0;
+    const completedOnboarding = user.hasCompletedProgramOnboarding ?? (hasPrograms ? true : false);
+
+    const fullUser: UserAccount = {
+      ...user,
+      hasCompletedProgramOnboarding: completedOnboarding
+    };
+
+    setCurrentUser(fullUser);
+    saveCurrentUser(fullUser);
+    syncUserProfileToCloudSql(fullUser);
+    const activeLang = fullUser.preferredLanguage || language;
     setLanguage(activeLang);
     showToast(
       activeLang === 'tr' ? 'Giriş Başarılı' : 'Signed In',
       activeLang === 'tr'
-        ? `Hoş geldiniz, ${user.name}! Bildirimler ${user.email} adresine gönderilecek.`
-        : `Welcome back, ${user.name}! Alerts will go to ${user.email}.`,
+        ? `Hoş geldiniz, ${fullUser.name}! Bildirimler ${fullUser.email} adresine gönderilecek.`
+        : `Welcome back, ${fullUser.name}! Alerts will go to ${fullUser.email}.`,
       'success'
     );
   };
@@ -421,8 +453,10 @@ export default function App() {
               for (const newCourse of brandNewCourses) {
                 const online = isCourseOnline(newCourse);
                 const matchesFilter = matchesDeliveryFilter(newCourse, group.deliveryFilter);
+                const eligibility = checkCourseEligibility(newCourse, currentUser?.enrolledPrograms);
+                const isEligible = eligibility.isEligible;
 
-                if (matchesFilter) {
+                if (matchesFilter && isEligible) {
                   // Add section to this unified course group card
                   const newSection: CourseGroupSection = {
                     crn: newCourse.crn,
@@ -436,7 +470,8 @@ export default function App() {
                     capacity: newCourse.capacity,
                     enrolled: newCourse.enrolled,
                     availableSeats: newCourse.remaining,
-                    lastChecked: new Date().toISOString()
+                    lastChecked: new Date().toISOString(),
+                    restrictions: newCourse.restrictions
                   };
 
                   const emailContent = generateNewCrnEmailHtml(
@@ -495,6 +530,18 @@ export default function App() {
                           },
                           ...(g.history || [])
                         ]
+                      };
+                    })
+                  );
+                } else if (!isEligible) {
+                  // Ineligible for student's enrolled programs - do not track, do not alert, mark as known
+                  setTrackedCourseGroups((prev) =>
+                    prev.map((g) => {
+                      if (g.id !== group.id) return g;
+                      return {
+                        ...g,
+                        knownCrns: Array.from(new Set([...g.knownCrns, newCourse.crn])),
+                        lastChecked: new Date().toISOString()
                       };
                     })
                   );
@@ -653,7 +700,7 @@ export default function App() {
           email: currentUser.email,
           deliveryFilter: 'all',
           sections: matchingSections,
-          knownCrns: eligibleCourses.map((c) => c.crn),
+          knownCrns: Array.from(new Set(courses.map((c) => c.crn))),
           status: 'active',
           createdAt: new Date().toISOString(),
           lastChecked: new Date().toISOString(),
@@ -866,346 +913,6 @@ export default function App() {
           : `Updated live İTÜ OBS quotas for ${group.courseCode}.`,
         'info'
       );
-    }
-  };
-
-  const handleGroupSimulateDrop = (groupId: string, targetCrn?: string) => {
-    setTrackedCourseGroups((prev) =>
-      prev.map((g) => {
-        if (g.id !== groupId) return g;
-        const targetSecIndex = targetCrn
-          ? g.sections.findIndex((s) => s.crn === targetCrn)
-          : 0;
-        if (targetSecIndex === -1 && g.sections.length === 0) return g;
-
-        const secIndex = targetSecIndex !== -1 ? targetSecIndex : 0;
-        const targetSec = g.sections[secIndex];
-        const newAvail = targetSec.availableSeats + 1;
-        const newEnrolled = Math.max(0, targetSec.enrolled - 1);
-
-        const updatedSections = [...g.sections];
-        updatedSections[secIndex] = {
-          ...targetSec,
-          availableSeats: newAvail,
-          enrolled: newEnrolled,
-          lastChecked: new Date().toISOString()
-        };
-
-        const recipientEmail = g.email || currentUser?.email || 'student@itu.edu.tr';
-        const activeLang = currentUser?.preferredLanguage || language || 'tr';
-
-        const emailSubject =
-          activeLang === 'en'
-            ? `🟢 SEAT OPENED: ${targetSec.courseCode} (CRN ${targetSec.crn})`
-            : `🟢 KONTENJAN AÇILDI: ${targetSec.courseCode} (CRN ${targetSec.crn})`;
-
-        const mockMonitor: ClassMonitor = {
-          id: 'temp-' + Date.now(),
-          userId: g.userId,
-          crn: targetSec.crn,
-          courseCode: targetSec.courseCode,
-          courseTitle: targetSec.courseTitle,
-          instructor: targetSec.instructor,
-          department: g.courseCode,
-          targetUrl: settings.defaultQuotaUrl,
-          notificationEmail: recipientEmail,
-          studentName: currentUser?.name || 'İTÜ Öğrencisi',
-          status: 'active',
-          totalCapacity: targetSec.capacity,
-          enrolled: newEnrolled,
-          availableSeats: newAvail,
-          lastChecked: new Date().toISOString(),
-          lastChanged: new Date().toISOString(),
-          createdAt: g.createdAt,
-          alertPreference: 'any_change',
-          checkIntervalSeconds: 45,
-          trackMode: 'course_code',
-          history: []
-        };
-
-        const emailContent = generateEmailHtml(
-          mockMonitor,
-          targetSec.availableSeats,
-          newAvail,
-          emailConfig,
-          'seat_dropped',
-          undefined,
-          activeLang
-        );
-        dispatchNotificationEmail(recipientEmail, emailContent.subject, emailContent.body);
-
-        showToast(
-          activeLang === 'en' ? '🟢 Seat Opened!' : '🟢 Kontenjan Açıldı!',
-          activeLang === 'en'
-            ? `CRN ${targetSec.crn} now has ${newAvail} open seat(s)! Notification email sent.`
-            : `CRN ${targetSec.crn} için ${newAvail} boş yer açıldı! Bildirim e-postası gönderildi.`,
-          'success'
-        );
-
-        setEmailPreviewData({
-          recipient: recipientEmail,
-          subject: emailContent.subject,
-          body: emailContent.body,
-          timestamp: new Date().toLocaleString()
-        });
-
-        return {
-          ...g,
-          sections: updatedSections,
-          lastChanged: new Date().toISOString(),
-          history: [
-            {
-              id: 'hist-' + Date.now(),
-              timestamp: new Date().toISOString(),
-              type: 'seat_dropped',
-              oldAvailable: targetSec.availableSeats,
-              newAvailable: newAvail,
-              oldEnrolled: targetSec.enrolled,
-              newEnrolled: newEnrolled,
-              emailDispatched: true,
-              emailRecipient: recipientEmail,
-              emailSubject: emailSubject,
-              notes: `Öğrenci dersi bıraktı: CRN ${targetSec.crn} için 1 kişilik yer açıldı.`
-            },
-            ...(g.history || [])
-          ]
-        };
-      })
-    );
-  };
-
-  const handleGroupSimulateCapacityIncrease = (groupId: string, targetCrn?: string) => {
-    setTrackedCourseGroups((prev) =>
-      prev.map((g) => {
-        if (g.id !== groupId) return g;
-        const targetSecIndex = targetCrn
-          ? g.sections.findIndex((s) => s.crn === targetCrn)
-          : 0;
-        if (targetSecIndex === -1 && g.sections.length === 0) return g;
-
-        const secIndex = targetSecIndex !== -1 ? targetSecIndex : 0;
-        const targetSec = g.sections[secIndex];
-        const newCap = targetSec.capacity + 5;
-        const newAvail = targetSec.availableSeats + 5;
-
-        const updatedSections = [...g.sections];
-        updatedSections[secIndex] = {
-          ...targetSec,
-          capacity: newCap,
-          availableSeats: newAvail,
-          lastChecked: new Date().toISOString()
-        };
-
-        const recipientEmail = g.email || currentUser?.email || 'student@itu.edu.tr';
-        const activeLang = currentUser?.preferredLanguage || language || 'tr';
-
-        const emailSubject =
-          activeLang === 'en'
-            ? `🚀 CAPACITY INCREASED (+5): ${targetSec.courseCode} (CRN ${targetSec.crn})`
-            : `🚀 KONTENJAN ARTIRILDI (+5): ${targetSec.courseCode} (CRN ${targetSec.crn})`;
-
-        const mockMonitor: ClassMonitor = {
-          id: 'temp-' + Date.now(),
-          userId: g.userId,
-          crn: targetSec.crn,
-          courseCode: targetSec.courseCode,
-          courseTitle: targetSec.courseTitle,
-          instructor: targetSec.instructor,
-          department: g.courseCode,
-          targetUrl: settings.defaultQuotaUrl,
-          notificationEmail: recipientEmail,
-          studentName: currentUser?.name || 'İTÜ Öğrencisi',
-          status: 'active',
-          totalCapacity: newCap,
-          enrolled: targetSec.enrolled,
-          availableSeats: newAvail,
-          lastChecked: new Date().toISOString(),
-          lastChanged: new Date().toISOString(),
-          createdAt: g.createdAt,
-          alertPreference: 'any_change',
-          checkIntervalSeconds: 45,
-          trackMode: 'course_code',
-          history: []
-        };
-
-        const emailContent = generateEmailHtml(
-          mockMonitor,
-          targetSec.availableSeats,
-          newAvail,
-          emailConfig,
-          'capacity_increase',
-          { oldCapacity: targetSec.capacity, newCapacity: newCap },
-          activeLang
-        );
-        dispatchNotificationEmail(recipientEmail, emailContent.subject, emailContent.body);
-
-        showToast(
-          activeLang === 'en' ? '🚀 Quota Expanded (+5)!' : '🚀 Kontenjan Artırıldı (+5)!',
-          activeLang === 'en'
-            ? `Department added +5 seats to CRN ${targetSec.crn}. Email dispatched.`
-            : `Bölüm CRN ${targetSec.crn} kontenjanını +5 artırdı. Bildirim gönderildi.`,
-          'success'
-        );
-
-        setEmailPreviewData({
-          recipient: recipientEmail,
-          subject: emailContent.subject,
-          body: emailContent.body,
-          timestamp: new Date().toLocaleString()
-        });
-
-        return {
-          ...g,
-          sections: updatedSections,
-          lastChanged: new Date().toISOString(),
-          history: [
-            {
-              id: 'hist-' + Date.now(),
-              timestamp: new Date().toISOString(),
-              type: 'capacity_increased',
-              oldAvailable: targetSec.availableSeats,
-              newAvailable: newAvail,
-              oldEnrolled: targetSec.enrolled,
-              newEnrolled: targetSec.enrolled,
-              emailDispatched: true,
-              emailRecipient: recipientEmail,
-              emailSubject: emailSubject,
-              notes: `Bölüm kontenjanı 5 kişi artırdı (Yeni kapasite: ${newCap}).`
-            },
-            ...(g.history || [])
-          ]
-        };
-      })
-    );
-  };
-
-  const handleGroupSimulateNewCrn = async (courseCode: string, isOnline: boolean) => {
-    const cleanCode = courseCode.replace(/\s+/g, '').toUpperCase();
-    try {
-      const newCourse = await simulateNewCrnOnServer(cleanCode, isOnline);
-      if (!newCourse) {
-        showToast('Hata', 'Yeni CRN simülasyonu başlatılamadı.', 'info');
-        return;
-      }
-
-      const group = trackedCourseGroups.find((g) => g.courseCode === cleanCode);
-      const activeLang = currentUser?.preferredLanguage || language || 'tr';
-      const recipientEmail = group?.email || currentUser?.email || emailConfig.senderAddress;
-
-      const matchesFilter = group ? matchesDeliveryFilter(newCourse, group.deliveryFilter) : true;
-
-      if (matchesFilter) {
-        const newSection: CourseGroupSection = {
-          crn: newCourse.crn,
-          courseCode: newCourse.courseCode,
-          courseTitle: newCourse.courseTitle,
-          instructor: newCourse.instructor,
-          teachingMethod: newCourse.teachingMethod || (isOnline ? 'Çevrimiçi (Online)' : 'Fiziksel (Yüz yüze)'),
-          isOnline: isOnline,
-          building: newCourse.building,
-          dayTime: newCourse.dayTime,
-          capacity: newCourse.capacity,
-          enrolled: newCourse.enrolled,
-          availableSeats: newCourse.remaining,
-          lastChecked: new Date().toISOString()
-        };
-
-        const emailContent = generateNewCrnEmailHtml(
-          newCourse.courseCode,
-          newCourse.courseTitle,
-          newCourse.crn,
-          newCourse.instructor,
-          newCourse.capacity,
-          newCourse.enrolled,
-          newCourse.remaining,
-          settings.defaultQuotaUrl || 'https://obs.itu.edu.tr/public/DersProgram',
-          recipientEmail,
-          emailConfig,
-          activeLang
-        );
-
-        dispatchNotificationEmail(recipientEmail, emailContent.subject, emailContent.body);
-
-        showToast(
-          activeLang === 'en' ? '🔔 New CRN Opened!' : '🔔 Yeni CRN Açıldı!',
-          activeLang === 'en'
-            ? `New ${isOnline ? 'Online' : 'In-person'} CRN ${newCourse.crn} opened for ${cleanCode}! Notification email sent.`
-            : `${cleanCode} dersi için yeni ${isOnline ? 'Çevrimiçi' : 'Yüz Yüze'} ${newCourse.crn} CRN'i açıldı! Bildirim e-postası gönderildi.`,
-          'alert'
-        );
-
-        setEmailPreviewData({
-          recipient: recipientEmail,
-          subject: emailContent.subject,
-          body: emailContent.body,
-          timestamp: new Date().toLocaleString()
-        });
-
-        setTrackedCourseGroups((prev) =>
-          prev.map((g) => {
-            if (g.courseCode !== cleanCode) return g;
-            return {
-              ...g,
-              sections: [newSection, ...g.sections],
-              knownCrns: Array.from(new Set([...g.knownCrns, newCourse.crn])),
-              lastChanged: new Date().toISOString(),
-              history: [
-                {
-                  id: 'hist-' + Date.now(),
-                  timestamp: new Date().toISOString(),
-                  type: 'new_crn_opened',
-                  oldAvailable: 0,
-                  newAvailable: newCourse.remaining,
-                  oldEnrolled: 0,
-                  newEnrolled: newCourse.enrolled,
-                  emailDispatched: true,
-                  emailRecipient: recipientEmail,
-                  emailSubject: emailContent.subject,
-                  notes: `Yeni ${isOnline ? 'çevrimiçi' : 'yüz yüze'} CRN ${newCourse.crn} açıldı. Filtreyle eşleştiği için bildirim gönderildi.`
-                },
-                ...(g.history || [])
-              ]
-            };
-          })
-        );
-      } else {
-        const filterLabel = getDeliveryFilterLabel(group?.deliveryFilter || 'all', activeLang).label;
-        showToast(
-          activeLang === 'en' ? 'Filter Check: No Alert Sent' : 'Filtre Kontrolü: Bildirim Gönderilmedi',
-          activeLang === 'en'
-            ? `New CRN ${newCourse.crn} opened for ${cleanCode}, but it did not match your "${filterLabel}" filter. No alert sent.`
-            : `${cleanCode} için yeni CRN ${newCourse.crn} (${isOnline ? 'Çevrimiçi' : 'Yüz Yüze'}) açıldı, fakat terciğiniz "${filterLabel}" olduğu için bildirim gönderilmedi.`,
-          'info'
-        );
-
-        setTrackedCourseGroups((prev) =>
-          prev.map((g) => {
-            if (g.courseCode !== cleanCode) return g;
-            return {
-              ...g,
-              knownCrns: Array.from(new Set([...g.knownCrns, newCourse.crn])),
-              history: [
-                {
-                  id: 'hist-' + Date.now(),
-                  timestamp: new Date().toISOString(),
-                  type: 'new_crn_opened',
-                  oldAvailable: 0,
-                  newAvailable: newCourse.remaining,
-                  oldEnrolled: 0,
-                  newEnrolled: newCourse.enrolled,
-                  emailDispatched: false,
-                  emailRecipient: recipientEmail,
-                  emailSubject: `CRN ${newCourse.crn} açıldı (${filterLabel} filtresi nedeniyle bildirim iletilmedi)`,
-                  notes: `Yeni şube açıldı ancak "${filterLabel}" tercihinize uymadığı için e-posta gönderilmedi.`
-                },
-                ...(g.history || [])
-              ]
-            };
-          })
-        );
-      }
-    } catch (e) {
-      console.error('Error simulating new CRN for group:', e);
     }
   };
 
@@ -1747,6 +1454,7 @@ export default function App() {
           navigateTo('/');
         }}
         monitors={monitors}
+        trackedCourseGroups={trackedCourseGroups}
         emailConfig={emailConfig}
         settings={settings}
         onSaveEmailConfig={(newCfg) => {
@@ -1767,7 +1475,14 @@ export default function App() {
         onTogglePauseMonitor={handleTogglePause}
         onDeleteMonitor={handleDeleteMonitor}
         onForceCheckMonitor={handleCheckNow}
+        onTogglePauseGroup={handleGroupTogglePause}
+        onDeleteGroup={handleGroupDelete}
+        onForceCheckGroup={handleGroupCheckNow}
         onSendTestEmail={handleSendTestEmail}
+        onSimulateDrop={handleSimulateDrop}
+        onSimulateClaim={handleSimulateClaim}
+        onSimulateCapacityIncrease={handleSimulateCapacityIncrease}
+        onSimulateNewCrn={handleSimulateNewCrn}
         isAdminAuthenticated={isAdminAuthenticated}
         onSetAdminAuthenticated={handleSetAdminAuth}
       />
@@ -2041,9 +1756,6 @@ export default function App() {
                 key={group.id}
                 group={group}
                 onCheckNow={handleGroupCheckNow}
-                onSimulateDrop={(groupId, targetCrn) => handleGroupSimulateDrop(groupId, targetCrn)}
-                onSimulateCapacityIncrease={(groupId, targetCrn) => handleGroupSimulateCapacityIncrease(groupId, targetCrn)}
-                onSimulateNewCrn={(courseCode, isOnline) => handleGroupSimulateNewCrn(courseCode, isOnline)}
                 onTogglePause={handleGroupTogglePause}
                 onDelete={handleGroupDelete}
                 onViewHistory={handleViewGroupHistory}
@@ -2059,10 +1771,6 @@ export default function App() {
                 key={mon.id}
                 monitor={mon}
                 onCheckNow={handleCheckNow}
-                onSimulateDrop={handleSimulateDrop}
-                onSimulateClaim={handleSimulateClaim}
-                onSimulateCapacityIncrease={handleSimulateCapacityIncrease}
-                onSimulateNewCrn={handleSimulateNewCrn}
                 onTogglePause={handleTogglePause}
                 onDelete={handleDeleteMonitor}
                 onViewHistory={(m) => setSelectedHistoryMonitor(m)}
@@ -2228,6 +1936,7 @@ export default function App() {
             setCurrentUser(updated);
             saveCurrentUser(updated);
             updateUserAccount(currentUser.email, { hasCompletedProgramOnboarding: true });
+            syncUserProfileToCloudSql(updated);
           }}
           onSavePrograms={(programs) => {
             const updated = {
@@ -2241,6 +1950,7 @@ export default function App() {
               enrolledPrograms: programs,
               hasCompletedProgramOnboarding: true
             });
+            syncUserProfileToCloudSql(updated);
             showToast(
               language === 'tr' ? 'Bölüm Tercihleri Kaydedildi' : 'Programs Saved',
               language === 'tr'
