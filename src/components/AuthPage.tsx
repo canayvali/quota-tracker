@@ -504,10 +504,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         </motion.button>
       </div>
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center space-y-2">
-        <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100 tracking-tight">
-          {t.authTitle}
-        </h1>
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center flex flex-col items-center space-y-3">
+        {/* itüdis logo mark */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-2xl bg-stone-100/90 dark:bg-stone-800/90 border border-stone-200/80 dark:border-stone-700/80 shadow-2xs backdrop-blur-xs transition-transform hover:scale-105 select-none cursor-default">
+          <span className="text-xl sm:text-2xl font-extrabold tracking-tight lowercase font-sans text-stone-900 dark:text-stone-100">
+            itüdis
+          </span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-xs ring-2 ring-emerald-500/20 animate-pulse" />
+        </div>
         <p className="text-xs text-stone-500 dark:text-stone-400 max-w-sm mx-auto">
           {t.authSubtitle}
         </p>
