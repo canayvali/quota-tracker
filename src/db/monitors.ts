@@ -1,13 +1,20 @@
 import { db } from './index.ts';
 import { monitors, trackedCourseGroups, quotaHistory } from './schema.ts';
-import { eq, desc } from 'drizzle-orm';
+import { eq, or, desc } from 'drizzle-orm';
 
-export async function getUserMonitors(userId: string) {
+export async function getUserMonitors(userId: string, email?: string) {
   try {
+    const conditions = [];
+    if (userId) conditions.push(eq(monitors.userId, userId));
+    if (email) conditions.push(eq(monitors.notificationEmail, email.toLowerCase()));
+    if (userId && userId.includes('@')) conditions.push(eq(monitors.notificationEmail, userId.toLowerCase()));
+
+    if (conditions.length === 0) return [];
+
     return await db
       .select()
       .from(monitors)
-      .where(eq(monitors.userId, userId))
+      .where(conditions.length > 1 ? or(...conditions) : conditions[0])
       .orderBy(desc(monitors.createdAt));
   } catch (error) {
     console.error('Error in getUserMonitors:', error);
@@ -96,12 +103,19 @@ export async function deleteMonitor(id: string, _userId?: string) {
   }
 }
 
-export async function getUserTrackedGroups(userId: string) {
+export async function getUserTrackedGroups(userId: string, email?: string) {
   try {
+    const conditions = [];
+    if (userId) conditions.push(eq(trackedCourseGroups.userId, userId));
+    if (email) conditions.push(eq(trackedCourseGroups.email, email.toLowerCase()));
+    if (userId && userId.includes('@')) conditions.push(eq(trackedCourseGroups.email, userId.toLowerCase()));
+
+    if (conditions.length === 0) return [];
+
     return await db
       .select()
       .from(trackedCourseGroups)
-      .where(eq(trackedCourseGroups.userId, userId))
+      .where(conditions.length > 1 ? or(...conditions) : conditions[0])
       .orderBy(desc(trackedCourseGroups.createdAt));
   } catch (error) {
     console.error('Error in getUserTrackedGroups:', error);

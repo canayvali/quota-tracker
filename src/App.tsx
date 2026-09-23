@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   AlertCircle,
@@ -18,22 +18,24 @@ import {
   clearCurrentUser,
   loadCurrentUser,
   loadEmailConfig,
-  loadMonitors,
+  loadUserMonitors,
+  saveUserMonitors,
   loadSettings,
   loadTheme,
-  loadTrackedCourseGroups,
+  loadUserTrackedCourseGroups,
+  saveUserTrackedCourseGroups,
   saveCurrentUser,
   saveEmailConfig,
-  saveMonitors,
   saveSettings,
   saveTheme,
-  saveTrackedCourseGroups,
   setAdminAuth,
   updateUserLanguage,
   updateUserTheme,
   updateUserAccount,
   syncMonitorToCloudSql,
+  deleteMonitorFromCloudSql,
   syncTrackedGroupToCloudSql,
+  deleteTrackedGroupFromCloudSql,
   syncUserProfileToCloudSql,
   syncUserDataFromCloudSql
 } from './utils/storage';
@@ -137,8 +139,18 @@ export default function App() {
   // Scroll state for header collapse
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
 
-  // Core Data
-  const [monitors, setMonitors] = useState<ClassMonitor[]>(() => loadMonitors());
+  // User-isolated Core Data
+  const [monitors, setMonitors] = useState<ClassMonitor[]>(() => {
+    const user = loadCurrentUser();
+    if (!user) return [];
+    return loadUserMonitors(user.email || user.id);
+  });
+  const [trackedCourseGroups, setTrackedCourseGroups] = useState<TrackedCourseGroup[]>(() => {
+    const user = loadCurrentUser();
+    if (!user) return [];
+    return loadUserTrackedCourseGroups(user.email || user.id);
+  });
+
   const [settings, setSettings] = useState<GlobalSettings>(() => loadSettings());
   const [emailConfig, setEmailConfig] = useState<EmailSenderConfig>(() => loadEmailConfig());
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
@@ -185,6 +197,76 @@ export default function App() {
     }, 4500);
   };
 
+  // Load user data specifically for the logged in user from local storage and Cloud SQL
+  const loadUserDataForUser = useCallback(async (user: UserAccount | null) => {
+    if (!user) {
+      setMonitors([]);
+      setTrackedCourseGroups([]);
+      return;
+    }
+
+    const userKey = user.email || user.id;
+
+    // 1. Initial cached data for instant render
+    const cachedMons = loadUserMonitors(userKey);
+    const cachedGroups = loadUserTrackedCourseGroups(userKey);
+    setMonitors(cachedMons);
+    setTrackedCourseGroups(cachedGroups);
+
+    // 2. Fetch fresh data from Cloud SQL server
+    try {
+      const data = await syncUserDataFromCloudSql(user.id, user.email);
+      if (data && data.success) {
+        if (data.profile) {
+          setCurrentUser((prev) => {
+            if (!prev) return prev;
+            const hasPrograms =
+              (data.profile.enrolledPrograms && data.profile.enrolledPrograms.length > 0) ||
+              (prev.enrolledPrograms && prev.enrolledPrograms.length > 0);
+            const completedOnboarding =
+              data.profile.hasCompletedProgramOnboarding ??
+              (hasPrograms ? true : prev.hasCompletedProgramOnboarding);
+
+            const merged: UserAccount = {
+              ...prev,
+              name: data.profile.name || prev.name,
+              enrolledPrograms:
+                data.profile.enrolledPrograms && data.profile.enrolledPrograms.length > 0
+                  ? data.profile.enrolledPrograms
+                  : prev.enrolledPrograms || [],
+              hasCompletedProgramOnboarding: completedOnboarding,
+              preferredLanguage: data.profile.preferredLanguage || prev.preferredLanguage,
+              theme: data.profile.theme || prev.theme,
+            };
+            saveCurrentUser(merged);
+            return merged;
+          });
+        }
+
+        const serverMons: ClassMonitor[] = Array.isArray(data.monitors)
+          ? data.monitors.map((m: any) => ({ ...m, history: m.history || [] }))
+          : [];
+        const serverGroups: TrackedCourseGroup[] = Array.isArray(data.trackedCourseGroups)
+          ? data.trackedCourseGroups.map((g: any) => ({
+              ...g,
+              sections: g.sections || [],
+              knownCrns: g.knownCrns || [],
+              history: g.history || []
+            }))
+          : [];
+
+        // Update state and user-scoped storage with server truth
+        setMonitors(serverMons);
+        saveUserMonitors(userKey, serverMons);
+
+        setTrackedCourseGroups(serverGroups);
+        saveUserTrackedCourseGroups(userKey, serverGroups);
+      }
+    } catch (err) {
+      console.warn('[Cloud SQL Load Error]:', err);
+    }
+  }, []);
+
   // Listen to browser navigation & back/forward buttons
   useEffect(() => {
     const handleLocationChange = () => {
@@ -216,46 +298,11 @@ export default function App() {
       body: JSON.stringify({ smtpConfig: emailConfig })
     }).catch((err) => console.error('[Initial SMTP Sync Error]:', err));
 
-    if (currentUser?.id || currentUser?.email) {
-      const uid = currentUser.id || currentUser.email;
-      syncUserDataFromCloudSql(uid).then((data) => {
-        if (data && data.success) {
-          if (data.profile) {
-            setCurrentUser((prev) => {
-              if (!prev) return prev;
-              const hasPrograms =
-                (data.profile.enrolledPrograms && data.profile.enrolledPrograms.length > 0) ||
-                (prev.enrolledPrograms && prev.enrolledPrograms.length > 0);
-              const completedOnboarding =
-                data.profile.hasCompletedProgramOnboarding ??
-                (hasPrograms ? true : prev.hasCompletedProgramOnboarding);
-
-              const merged: UserAccount = {
-                ...prev,
-                name: data.profile.name || prev.name,
-                enrolledPrograms:
-                  data.profile.enrolledPrograms && data.profile.enrolledPrograms.length > 0
-                    ? data.profile.enrolledPrograms
-                    : prev.enrolledPrograms || [],
-                hasCompletedProgramOnboarding: completedOnboarding,
-                preferredLanguage: data.profile.preferredLanguage || prev.preferredLanguage,
-                theme: data.profile.theme || prev.theme,
-              };
-              saveCurrentUser(merged);
-              return merged;
-            });
-          }
-          if (data.monitors && data.monitors.length > 0) {
-            setMonitors((prev) => {
-              const map = new Map(prev.map((m) => [m.id, m]));
-              for (const m of data.monitors) {
-                map.set(m.id, { ...m, history: m.history || [] });
-              }
-              return Array.from(map.values());
-            });
-          }
-        }
-      });
+    if (currentUser) {
+      loadUserDataForUser(currentUser);
+    } else {
+      setMonitors([]);
+      setTrackedCourseGroups([]);
     }
   }, []);
 
@@ -295,6 +342,8 @@ export default function App() {
     setCurrentUser(fullUser);
     saveCurrentUser(fullUser);
     syncUserProfileToCloudSql(fullUser);
+    loadUserDataForUser(fullUser);
+
     const activeLang = fullUser.preferredLanguage || language;
     setLanguage(activeLang);
     showToast(
@@ -309,6 +358,8 @@ export default function App() {
   const handleSignOut = () => {
     setCurrentUser(null);
     clearCurrentUser();
+    setMonitors([]);
+    setTrackedCourseGroups([]);
     setIsProfileModalOpen(false);
     // If it's login screen, select Turkish by default as requested
     setLanguage('tr');
@@ -329,10 +380,12 @@ export default function App() {
     }
   };
 
-  // Sync to storage
+  // Sync to user-partitioned storage
   useEffect(() => {
-    saveMonitors(monitors);
-  }, [monitors]);
+    if (currentUser) {
+      saveUserMonitors(currentUser.email || currentUser.id, monitors);
+    }
+  }, [monitors, currentUser]);
 
   useEffect(() => {
     saveSettings(settings);
@@ -342,14 +395,11 @@ export default function App() {
     saveEmailConfig(emailConfig);
   }, [emailConfig]);
 
-  // Tracked Course Code Groups (e.g. CEV103, MAT103E) - aggregated in single box per course
-  const [trackedCourseGroups, setTrackedCourseGroups] = useState<TrackedCourseGroup[]>(() => {
-    return loadTrackedCourseGroups();
-  });
-
   useEffect(() => {
-    saveTrackedCourseGroups(trackedCourseGroups);
-  }, [trackedCourseGroups]);
+    if (currentUser) {
+      saveUserTrackedCourseGroups(currentUser.email || currentUser.id, trackedCourseGroups);
+    }
+  }, [trackedCourseGroups, currentUser]);
 
   // Migration: Automatically collapse any legacy flat monitors with trackMode === 'course_code' into unified group boxes
   useEffect(() => {
@@ -920,8 +970,10 @@ export default function App() {
     setTrackedCourseGroups((prev) =>
       prev.map((g) => {
         if (g.id !== groupId) return g;
-        const nextStatus = g.status === 'active' ? 'paused' : 'active';
-        return { ...g, status: nextStatus };
+        const nextStatus: 'active' | 'paused' = g.status === 'active' ? 'paused' : 'active';
+        const updated: TrackedCourseGroup = { ...g, status: nextStatus };
+        syncTrackedGroupToCloudSql(updated);
+        return updated;
       })
     );
   };
@@ -930,6 +982,13 @@ export default function App() {
     const g = trackedCourseGroups.find((x) => x.id === groupId);
     if (!g) return;
     setTrackedCourseGroups((prev) => prev.filter((x) => x.id !== groupId));
+    deleteTrackedGroupFromCloudSql(groupId);
+    if (currentUser) {
+      saveUserTrackedCourseGroups(
+        currentUser.email || currentUser.id,
+        trackedCourseGroups.filter((x) => x.id !== groupId)
+      );
+    }
     showToast(
       language === 'tr' ? 'Takip Kaldırıldı' : 'Tracking Removed',
       language === 'tr'
@@ -943,7 +1002,9 @@ export default function App() {
     setTrackedCourseGroups((prev) =>
       prev.map((g) => {
         if (g.id !== groupId) return g;
-        return { ...g, deliveryFilter: newFilter };
+        const updated = { ...g, deliveryFilter: newFilter };
+        syncTrackedGroupToCloudSql(updated);
+        return updated;
       })
     );
     showToast(
@@ -1102,6 +1163,7 @@ export default function App() {
   // Add new monitor from modal
   const handleAddMonitor = (newMonitor: ClassMonitor) => {
     setMonitors((prev) => [newMonitor, ...prev]);
+    syncMonitorToCloudSql(newMonitor);
     setIsAddModalOpen(false);
     showToast(
       'Class Monitor Activated',
@@ -1158,6 +1220,7 @@ export default function App() {
     };
 
     setMonitors((prev) => [newMonitor, ...prev]);
+    syncMonitorToCloudSql(newMonitor);
     showToast(
       'Added from İTÜ OBS!',
       `CRN ${course.crn} (${course.courseCode}) is now tracked. Alerts will go to ${newMonitor.notificationEmail}.`,
@@ -1170,8 +1233,10 @@ export default function App() {
     setMonitors((prev) =>
       prev.map((mon) => {
         if (mon.id !== id) return mon;
-        const newStatus = mon.status === 'active' ? 'paused' : 'active';
-        return { ...mon, status: newStatus };
+        const nextStatus: 'active' | 'paused' = mon.status === 'active' ? 'paused' : 'active';
+        const updated: ClassMonitor = { ...mon, status: nextStatus };
+        syncMonitorToCloudSql(updated);
+        return updated;
       })
     );
   };
@@ -1179,7 +1244,11 @@ export default function App() {
   // Delete monitor
   const handleDeleteMonitor = (id: string) => {
     setMonitors((prev) => prev.filter((m) => m.id !== id));
-    showToast('Monitor Removed', 'The class tracker has been deleted.', 'info');
+    deleteMonitorFromCloudSql(id, currentUser?.id);
+    if (currentUser) {
+      saveUserMonitors(currentUser.email || currentUser.id, monitors.filter((m) => m.id !== id));
+    }
+    showToast(language === 'en' ? 'Monitor Removed' : 'CRN Silindi', language === 'en' ? 'The class tracker has been deleted.' : 'CRN takipten çıkarıldı.', 'info');
   };
 
   // Dispatch background email via Brevo SMTP relay

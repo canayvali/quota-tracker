@@ -1583,15 +1583,16 @@ app.post('/api/auth/update-profile', handleUpdateProfile);
 // Endpoint: Get all User Data (Monitors, Tracked Groups, Profile) from Cloud SQL
 app.get('/api/db/user-data', async (req: express.Request, res: express.Response) => {
   try {
-    const userId = (req.query.userId as string) || (req.query.uid as string);
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
+    const userId = (req.query.userId as string) || (req.query.uid as string) || '';
+    const email = (req.query.email as string) || '';
+    if (!userId && !email) {
+      return res.status(400).json({ error: 'userId or email is required' });
     }
 
     const [userProfile, userMonitors, userGroups] = await Promise.all([
-      getUserByUid(userId),
-      getUserMonitors(userId),
-      getUserTrackedGroups(userId),
+      userId ? getUserByUid(userId) : (email ? getUserByEmail(email) : null),
+      getUserMonitors(userId, email),
+      getUserTrackedGroups(userId, email),
     ]);
 
     return res.json({

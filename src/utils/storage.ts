@@ -1,13 +1,25 @@
 import { AppLanguage, AppTheme, ClassMonitor, EmailSenderConfig, GlobalSettings, TrackedCourseGroup, UserAccount } from '../types';
 
-const STORAGE_KEY_MONITORS = 'crn_quota_monitors_v4';
 const STORAGE_KEY_SETTINGS = 'crn_quota_settings_v4';
 const STORAGE_KEY_EMAIL_CONFIG = 'crn_quota_email_config_v4';
 const STORAGE_KEY_ADMIN_AUTH = 'crn_quota_admin_auth_v4';
 const STORAGE_KEY_USERS = 'crn_quota_users_v1';
 const STORAGE_KEY_CURRENT_USER = 'crn_quota_current_user_v1';
 const STORAGE_KEY_THEME = 'crn_quota_theme_v1';
-const STORAGE_KEY_COURSE_GROUPS = 'crn_quota_course_groups_v5';
+
+// User-scoped storage prefix keys
+const USER_MONITORS_PREFIX = 'crn_user_monitors_';
+const USER_GROUPS_PREFIX = 'crn_user_groups_';
+
+// Remove legacy unpartitioned storage keys to avoid cross-user state bleeding
+try {
+  localStorage.removeItem('crn_quota_monitors_v4');
+  localStorage.removeItem('crn_quota_course_groups_v5');
+  localStorage.removeItem('crn_quota_monitors_v3');
+  localStorage.removeItem('crn_quota_course_groups_v4');
+} catch {
+  // ignore
+}
 
 export const DEFAULT_QUOTA_SOURCE_URL = 'https://obs.itu.edu.tr/public/DersProgram';
 export const ADMIN_PASSWORD = 'HelloWorld';
@@ -175,25 +187,79 @@ export function clearCurrentUser(): void {
   }
 }
 
-export function loadMonitors(): ClassMonitor[] {
+export function getUserStorageKey(userKey?: string): string {
+  if (!userKey) return 'anonymous';
+  return userKey.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
+}
+
+export function loadUserMonitors(userKey?: string): ClassMonitor[] {
+  if (!userKey) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_MONITORS);
-    if (!raw) {
-      saveMonitors(INITIAL_MONITORS);
-      return INITIAL_MONITORS;
-    }
+    const key = USER_MONITORS_PREFIX + getUserStorageKey(userKey);
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
     return JSON.parse(raw);
   } catch {
-    return INITIAL_MONITORS;
+    return [];
   }
 }
 
-export function saveMonitors(monitors: ClassMonitor[]): void {
+export function saveUserMonitors(userKey: string, monitors: ClassMonitor[]): void {
+  if (!userKey) return;
   try {
-    localStorage.setItem(STORAGE_KEY_MONITORS, JSON.stringify(monitors));
+    const key = USER_MONITORS_PREFIX + getUserStorageKey(userKey);
+    localStorage.setItem(key, JSON.stringify(monitors));
   } catch {
     // quota exceeded or privacy mode
   }
+}
+
+// Backward compatibility helper
+export function loadMonitors(): ClassMonitor[] {
+  const curr = loadCurrentUser();
+  if (!curr) return [];
+  return loadUserMonitors(curr.email || curr.id);
+}
+
+export function saveMonitors(monitors: ClassMonitor[]): void {
+  const curr = loadCurrentUser();
+  if (!curr) return;
+  saveUserMonitors(curr.email || curr.id, monitors);
+}
+
+export function loadUserTrackedCourseGroups(userKey?: string): TrackedCourseGroup[] {
+  if (!userKey) return [];
+  try {
+    const key = USER_GROUPS_PREFIX + getUserStorageKey(userKey);
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveUserTrackedCourseGroups(userKey: string, groups: TrackedCourseGroup[]): void {
+  if (!userKey) return;
+  try {
+    const key = USER_GROUPS_PREFIX + getUserStorageKey(userKey);
+    localStorage.setItem(key, JSON.stringify(groups));
+  } catch {
+    // ignore
+  }
+}
+
+// Backward compatibility helper
+export function loadTrackedCourseGroups(): TrackedCourseGroup[] {
+  const curr = loadCurrentUser();
+  if (!curr) return [];
+  return loadUserTrackedCourseGroups(curr.email || curr.id);
+}
+
+export function saveTrackedCourseGroups(groups: TrackedCourseGroup[]): void {
+  const curr = loadCurrentUser();
+  if (!curr) return;
+  saveUserTrackedCourseGroups(curr.email || curr.id, groups);
 }
 
 export function loadSettings(): GlobalSettings {
@@ -288,28 +354,13 @@ export function updateUserTheme(email: string, theme: AppTheme): boolean {
   }
 }
 
-export function loadTrackedCourseGroups(): TrackedCourseGroup[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_COURSE_GROUPS);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-export function saveTrackedCourseGroups(groups: TrackedCourseGroup[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_COURSE_GROUPS, JSON.stringify(groups));
-  } catch {
-    // ignore
-  }
-}
-
 // Background Cloud SQL API sync helpers
-export async function syncUserDataFromCloudSql(userId: string) {
+export async function syncUserDataFromCloudSql(userId: string, email?: string) {
   try {
-    const res = await fetch(`/api/db/user-data?userId=${encodeURIComponent(userId)}`);
+    const params = new URLSearchParams();
+    if (userId) params.set('userId', userId);
+    if (email) params.set('email', email);
+    const res = await fetch(`/api/db/user-data?${params.toString()}`);
     if (res.ok) {
       const data = await res.json();
       return data;
@@ -332,6 +383,17 @@ export async function syncMonitorToCloudSql(monitor: ClassMonitor) {
   }
 }
 
+export async function deleteMonitorFromCloudSql(id: string, userId?: string) {
+  try {
+    const url = userId
+      ? `/api/db/monitors/${encodeURIComponent(id)}?userId=${encodeURIComponent(userId)}`
+      : `/api/db/monitors/${encodeURIComponent(id)}`;
+    await fetch(url, { method: 'DELETE' });
+  } catch (err) {
+    console.warn('Failed to delete monitor from Cloud SQL:', err);
+  }
+}
+
 export async function syncTrackedGroupToCloudSql(group: TrackedCourseGroup) {
   try {
     await fetch('/api/db/tracked-groups', {
@@ -341,6 +403,14 @@ export async function syncTrackedGroupToCloudSql(group: TrackedCourseGroup) {
     });
   } catch (err) {
     console.warn('Failed to sync group to Cloud SQL:', err);
+  }
+}
+
+export async function deleteTrackedGroupFromCloudSql(id: string) {
+  try {
+    await fetch(`/api/db/tracked-groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch (err) {
+    console.warn('Failed to delete tracked group from Cloud SQL:', err);
   }
 }
 
