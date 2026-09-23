@@ -64,7 +64,7 @@ interface AdminPageProps {
   onSetAdminAuthenticated: (auth: boolean) => void;
 }
 
-type AdminTab = 'trackers' | 'users' | 'scraper' | 'email_account' | 'audit_logs' | 'security';
+type AdminTab = 'trackers' | 'users' | 'scraper' | 'email_account' | 'audit_logs' | 'security' | 'server_daemon';
 
 export const AdminPage: React.FC<AdminPageProps> = ({
   onExit,
@@ -136,6 +136,42 @@ export const AdminPage: React.FC<AdminPageProps> = ({
   // SMTP Testing state
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // 24/7 Server Daemon state
+  const [daemonStatus, setDaemonStatus] = useState<any>(null);
+  const [isTriggeringDaemon, setIsTriggeringDaemon] = useState(false);
+
+  const loadDaemonStatus = async () => {
+    try {
+      const res = await fetch('/api/daemon/status');
+      if (res.ok) {
+        const d = await res.json();
+        setDaemonStatus(d.stats);
+      }
+    } catch (err) {
+      console.warn('Error loading daemon status:', err);
+    }
+  };
+
+  const handleTriggerDaemonCheck = async () => {
+    setIsTriggeringDaemon(true);
+    try {
+      const res = await fetch('/api/daemon/trigger-check', { method: 'POST' });
+      if (res.ok) {
+        const d = await res.json();
+        setDaemonStatus(d.stats);
+      }
+      await refreshAllAdminData();
+    } catch (err) {
+      console.warn('Error triggering daemon check:', err);
+    } finally {
+      setIsTriggerDaemonChecked();
+    }
+  };
+
+  const setIsTriggerDaemonChecked = () => {
+    setTimeout(() => setIsTriggeringDaemon(false), 800);
+  };
 
   // User Edit Modal State
   const [editUserName, setEditUserName] = useState('');
@@ -792,6 +828,22 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               >
                 <History className="w-4 h-4" />
                 <span>Denetim Günlükleri ({allHistoryEvents.length})</span>
+              </button>
+
+              <button
+                id="admin-tab-daemon"
+                onClick={() => {
+                  setActiveTab('server_daemon');
+                  loadDaemonStatus();
+                }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === 'server_daemon'
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>7/24 Sunucu Robotu</span>
               </button>
 
               <button
@@ -2072,7 +2124,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         value={editedEmailConfig.senderName}
                         onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, senderName: e.target.value })}
                         className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900"
-                        placeholder="İTÜ OBS Kontenjan Uyarı Sistemi"
+                        placeholder="itüdis"
                       />
                     </div>
                     <div>
@@ -2085,7 +2137,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                         value={editedEmailConfig.senderAddress}
                         onChange={(e) => setEditedEmailConfig({ ...editedEmailConfig, senderAddress: e.target.value })}
                         className="w-full px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-hidden focus:border-stone-900 font-mono"
-                        placeholder="itu.ders.kayit@gmail.com"
+                        placeholder="noreply.itudis@gmail.com"
                       />
                     </div>
                   </div>
@@ -2271,6 +2323,125 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     Parolayı Güncelle
                   </button>
                 </form>
+              </div>
+            )}
+
+            {/* TAB 7: 7/24 Sunucu Robotu Durumu ve Günlükleri */}
+            {activeTab === 'server_daemon' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-stone-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-3 w-3 relative">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                        </span>
+                        <h2 className="text-base font-bold text-stone-900">7/24 Kesintisiz Sunucu Robotu (Daemon)</h2>
+                      </div>
+                      <p className="text-xs text-stone-500 mt-1">
+                        Bu robot, kullanıcıların bilgisayarları veya tarayıcıları kapalı olsa dahi sunucu tarafında her 30 saniyede bir Cloud SQL'deki tüm aktif dersleri canlı İTÜ OBS üzerinden tarar ve kontenjan açıldığında e-posta gönderir.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleTriggerDaemonCheck}
+                      disabled={isTriggeringDaemon}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isTriggeringDaemon ? 'animate-spin' : ''}`} />
+                      <span>{isTriggeringDaemon ? 'Taranıyor...' : 'Şimdi Canlı Tara'}</span>
+                    </button>
+                  </div>
+
+                  {/* Status Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Sunucu Çalışma Durumu</div>
+                      <div className="text-base font-bold text-emerald-600 mt-1 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                        7/24 Kesintisiz Aktif
+                      </div>
+                      <div className="text-[11px] text-stone-400 mt-1">Periyot: 30 saniyede bir</div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Son Tarama Zamanı</div>
+                      <div className="text-base font-bold text-stone-900 mt-1 font-mono">
+                        {daemonStatus?.lastCheckTime
+                          ? new Date(daemonStatus.lastCheckTime).toLocaleTimeString('tr-TR')
+                          : 'Yeni Başlatıldı'}
+                      </div>
+                      <div className="text-[11px] text-stone-400 mt-1">
+                        Sonraki: 30s içinde
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Taranan Aktif Dersler</div>
+                      <div className="text-base font-bold text-stone-900 mt-1 font-mono">
+                        {(daemonStatus?.activeMonitorsCount || 0) + (daemonStatus?.activeGroupsCount || 0)} adet
+                      </div>
+                      <div className="text-[11px] text-stone-400 mt-1">
+                        {daemonStatus?.activeMonitorsCount || 0} CRN, {daemonStatus?.activeGroupsCount || 0} Grup
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80">
+                      <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Toplam Gönderilen E-Posta</div>
+                      <div className="text-base font-bold text-stone-900 mt-1 font-mono">
+                        {daemonStatus?.emailsSent || 0} adet
+                      </div>
+                      <div className="text-[11px] text-stone-400 mt-1">
+                        {daemonStatus?.smtpSender || 'SMTP Hazır'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Real-time Daemon Event Logs */}
+                <div className="bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-stone-900">Arka Plan Robotu İşlem Günlükleri</h3>
+                      <p className="text-xs text-stone-500 mt-0.5">Sunucuda gerçekleşen son kontrol ve uyarı olayları</p>
+                    </div>
+                    <button
+                      onClick={loadDaemonStatus}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Yenile</span>
+                    </button>
+                  </div>
+
+                  <div className="rounded-xl border border-stone-200 bg-stone-950 p-4 font-mono text-xs text-stone-300 max-h-96 overflow-y-auto space-y-2">
+                    {(!daemonStatus?.recentLogs || daemonStatus.recentLogs.length === 0) ? (
+                      <div className="text-stone-500 py-4 text-center">
+                        Arka plan döngüsü çalışıyor, log kayıtları bekleniyor...
+                      </div>
+                    ) : (
+                      daemonStatus.recentLogs.map((log: any) => (
+                        <div key={log.id} className="flex items-start gap-2 leading-relaxed">
+                          <span className="text-stone-500 shrink-0 select-none">
+                            [{new Date(log.timestamp).toLocaleTimeString('tr-TR')}]
+                          </span>
+                          <span
+                            className={
+                              log.level === 'alert'
+                                ? 'text-emerald-400 font-bold'
+                                : log.level === 'warn'
+                                ? 'text-amber-400 font-semibold'
+                                : 'text-stone-300'
+                            }
+                          >
+                            {log.message}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>

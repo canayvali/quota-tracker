@@ -8,6 +8,7 @@ import {
   Globe,
   Loader2,
   Mail,
+  RefreshCw,
   Search,
   Sparkles,
   Zap
@@ -321,6 +322,70 @@ export default function App() {
       cancelAnimationFrame(rafId);
     };
   }, []);
+
+  // 24/7 Server Daemon Status state
+  const [daemonStats, setDaemonStats] = useState<{
+    isChecking: boolean;
+    lastCheckTime: string;
+    nextCheckTime: string;
+    checkCount: number;
+    activeMonitorsCount: number;
+    activeGroupsCount: number;
+    emailsSent: number;
+  } | null>(null);
+  const [isTriggeringDaemonCheck, setIsTriggeringDaemonCheck] = useState(false);
+
+  const fetchDaemonStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/daemon/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.stats) {
+          setDaemonStats(data.stats);
+        }
+      }
+    } catch {
+      // quiet fail
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDaemonStatus();
+    const interval = setInterval(fetchDaemonStatus, 15000);
+    return () => clearInterval(interval);
+  }, [fetchDaemonStatus]);
+
+  const handleTriggerServerCheck = async () => {
+    setIsTriggeringDaemonCheck(true);
+    try {
+      showToast(
+        language === 'en' ? 'Scanning Quotas on Server...' : 'Sunucuda Canlı Tarama Başlatıldı...',
+        language === 'en'
+          ? 'Cloud daemon is querying ITU OBS live right now.'
+          : 'Sunucu arka plan robotu şu an İTÜ OBS üzerindeki tüm aktif dersleri tarıyor.',
+        'info'
+      );
+      const res = await fetch('/api/daemon/trigger-check', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.stats) {
+          setDaemonStats(data.stats);
+        }
+      }
+      if (currentUser) {
+        await loadUserDataForUser(currentUser);
+      }
+      showToast(
+        language === 'en' ? 'Server Scan Completed' : 'Sunucu Taraması Tamamlandı',
+        language === 'en' ? 'Latest quota data synced.' : 'Güncel kontenjan bilgileri sunucudan eşitlendi.',
+        'success'
+      );
+    } catch (e) {
+      console.warn('Trigger check error:', e);
+    } finally {
+      setIsTriggeringDaemonCheck(false);
+    }
+  };
 
   const navigateTo = (path: string) => {
     window.history.pushState(null, '', path);
@@ -1593,6 +1658,50 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* 24/7 Autonomous Background Tracking Banner */}
+        <section className="bg-emerald-500/10 dark:bg-emerald-950/30 border border-emerald-500/25 dark:border-emerald-800/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950 dark:text-emerald-200 shadow-xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="relative flex h-3.5 w-3.5 mt-1 sm:mt-0 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                  {language === 'en' ? '24/7 Server Quota Daemon Active' : '7/24 Kesintisiz Sunucu Takibi Aktif'}
+                </span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 font-semibold">
+                  {language === 'en' ? 'Scans every 30s' : 'Her 30 Saniyede Bir Otomatik Tarama'}
+                </span>
+              </div>
+              <p className="text-xs text-stone-600 dark:text-stone-300 mt-0.5 leading-relaxed">
+                {language === 'en'
+                  ? 'Your courses are monitored autonomously on the cloud server. Even when your computer or tab is closed, you will receive email alerts instantly.'
+                  : `Dersleriniz sunucuda otonom taranır. Bilgisayarınız ve tarayıcınız kapalı olsa dahi kontenjan açıldığında anında ${currentUser?.email || 'e-posta'} adresinize bildirim gider.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            {daemonStats?.lastCheckTime && (
+              <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400">
+                {language === 'en' ? 'Last scan: ' : 'Son tarama: '}
+                {new Date(daemonStats.lastCheckTime).toLocaleTimeString('tr-TR')}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleTriggerServerCheck}
+              disabled={isTriggeringDaemonCheck}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+              title={language === 'en' ? 'Trigger an immediate server scan' : 'Sunucuda anlık tarama başlat'}
+            >
+              <RefreshCw className={`h-3 w-3 ${isTriggeringDaemonCheck ? 'animate-spin' : ''}`} />
+              <span>{language === 'en' ? 'Scan Now' : 'Şimdi Tara'}</span>
+            </button>
+          </div>
+        </section>
+
         {/* CRN-First Primary Input Box: Ask ONLY for CRN! (No email input needed) */}
         <section
           id="crn-input-section"

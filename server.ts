@@ -1,9 +1,11 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
 import { ITU_COURSES_CATALOG } from './src/data/ituCourses';
+import { isCourseOnline, matchesDeliveryFilter } from './src/utils/courseUtils';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
 import { db } from './src/db/index.ts';
 import { users as usersTable } from './src/db/schema.ts';
@@ -497,9 +499,13 @@ const BREVO_SMTP_DEFAULTS = {
   port: parseInt(process.env.SMTP_PORT || '587', 10),
   user: process.env.SMTP_USER || 'ba7eed001@smtp-brevo.com',
   pass: process.env.SMTP_PASS || 'bskD981CTehLLJb',
+  senderAddress: process.env.SMTP_SENDER_EMAIL || 'noreply.itudis@gmail.com',
+  senderName: process.env.SMTP_SENDER_NAME || 'itüdis'
 };
 
 // Store active SMTP config synchronized from admin panel
+const SMTP_CONFIG_FILE = path.join(process.cwd(), 'server-smtp-config.json');
+
 let activeServerSmtpConfig: {
   smtpHost?: string;
   smtpPort?: number;
@@ -508,6 +514,29 @@ let activeServerSmtpConfig: {
   senderAddress?: string;
   senderName?: string;
 } | null = null;
+
+function loadPersistedSmtpConfig() {
+  try {
+    if (fs.existsSync(SMTP_CONFIG_FILE)) {
+      const raw = fs.readFileSync(SMTP_CONFIG_FILE, 'utf-8');
+      activeServerSmtpConfig = JSON.parse(raw);
+      console.log('[Server SMTP] Loaded persisted SMTP configuration from disk:', activeServerSmtpConfig?.senderAddress);
+    }
+  } catch (err) {
+    console.warn('[Server SMTP] Could not read persisted SMTP config:', err);
+  }
+}
+
+function persistSmtpConfig(config: any) {
+  try {
+    fs.writeFileSync(SMTP_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    console.log('[Server SMTP] Persisted SMTP configuration to disk.');
+  } catch (err) {
+    console.warn('[Server SMTP] Could not persist SMTP config to disk:', err);
+  }
+}
+
+loadPersistedSmtpConfig();
 
 // Helper: Send email via Brevo HTTPS REST API (Port 443 - never blocked by cloud firewalls)
 async function sendViaBrevoHttpApi(apiKey: string, options: {
@@ -522,8 +551,8 @@ async function sendViaBrevoHttpApi(apiKey: string, options: {
   try {
     const payload: any = {
       sender: {
-        name: options.senderName || 'İTÜ OBS Quota Alert System',
-        email: options.senderAddress || BREVO_SMTP_DEFAULTS.user
+        name: options.senderName || BREVO_SMTP_DEFAULTS.senderName,
+        email: options.senderAddress || BREVO_SMTP_DEFAULTS.senderAddress
       },
       to: [{ email: options.to }],
       subject: options.subject,
@@ -590,10 +619,10 @@ async function sendOutgoingEmail(options: {
     pass = process.env.SMTP_PASS || 'bskD981CTehLLJb';
   }
 
-  const senderName = config.senderName || 'İTÜ OBS Quota Alert System';
-  const customSenderAddress = config.senderAddress;
-  // If senderAddress is not set or if using Brevo/relay, default to the authenticated user address
-  const safeSenderAddress = (user && user.includes('@')) ? user : (customSenderAddress || BREVO_SMTP_DEFAULTS.user);
+  const senderName = config.senderName || BREVO_SMTP_DEFAULTS.senderName;
+  const customSenderAddress = config.senderAddress || BREVO_SMTP_DEFAULTS.senderAddress;
+  // If custom sender address is provided (e.g. noreply.itudis@gmail.com), use it. Fallback to authenticated relay user if needed.
+  const safeSenderAddress = customSenderAddress || (user && user.includes('@') ? user : BREVO_SMTP_DEFAULTS.senderAddress);
 
   // If pass is a Brevo API key (starts with xkeysib- or 70+ chars), try Brevo HTTP REST API first
   if (pass && (pass.startsWith('xkeysib-') || pass.startsWith('api-key-'))) {
@@ -734,6 +763,7 @@ app.post('/api/email/save-config', (req, res) => {
       senderAddress: activeServerSmtpConfig.senderAddress,
       senderName: activeServerSmtpConfig.senderName
     });
+    persistSmtpConfig(activeServerSmtpConfig);
   }
   return res.json({
     success: true,
@@ -1742,32 +1772,166 @@ app.post('/api/db/history', async (req: express.Request, res: express.Response) 
 // Runs continuously on the server even when users are offline or tab is closed
 // ==========================================
 
+interface DaemonLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'alert';
+  message: string;
+}
+
+const daemonStats = {
+  isChecking: false,
+  lastCheckTime: new Date().toISOString(),
+  nextCheckTime: new Date(Date.now() + 30000).toISOString(),
+  checkCount: 0,
+  activeMonitorsCount: 0,
+  activeGroupsCount: 0,
+  emailsSent: 0,
+  recentLogs: [] as DaemonLogEntry[]
+};
+
+function logDaemonEvent(level: 'info' | 'warn' | 'alert', message: string) {
+  const timestamp = new Date().toISOString();
+  const entry: DaemonLogEntry = {
+    id: 'log-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    timestamp,
+    level,
+    message
+  };
+  daemonStats.recentLogs.unshift(entry);
+  if (daemonStats.recentLogs.length > 50) {
+    daemonStats.recentLogs.pop();
+  }
+  const prefix = level === 'alert' ? '🚨 [DAEMON ALERT]' : level === 'warn' ? '⚠️ [DAEMON WARN]' : 'ℹ️ [DAEMON]';
+  console.log(`${prefix} ${message}`);
+}
+
+// Extract subject prefix from courseCode or title (e.g. 'CEV 103' -> 'CEV', 'MAT103E' -> 'MAT', 'BLG 252E' -> 'BLG')
+function extractSubjectPrefix(code?: string | null): string {
+  if (!code) return 'BLG';
+  const clean = code.trim().toUpperCase();
+  const match = clean.match(/^([a-zA-ZçÇğĞıİöÖşŞüÜ]+)/i);
+  if (match) return match[1].toUpperCase();
+  return clean.slice(0, 3).toUpperCase();
+}
+
+// Live ITU OBS rate-limiting cache (cache per branch for max 15 seconds)
+const branchLastFetchedAt = new Map<string, number>();
+
+async function getOrFetchBranchCoursesLive(subjectPrefix: string): Promise<ScrapedItuCourse[]> {
+  const clean = subjectPrefix.trim().toUpperCase();
+  let branchId = branchCodeToId.get(clean);
+
+  if (!branchId) {
+    // Attempt dynamic lookup from ITU branch list
+    try {
+      const res = await fetch('https://obs.itu.edu.tr/public/DersProgram/SearchBransKoduByProgramSeviye?programSeviyeTipiAnahtari=LS');
+      if (res.ok) {
+        const branches = (await res.json()) as Array<{ bransKoduId: number; dersBransKodu: string }>;
+        for (const b of branches) {
+          branchCodeToId.set(b.dersBransKodu.trim().toUpperCase(), b.bransKoduId);
+        }
+      }
+    } catch (err) {
+      console.warn('[ITU Live Scraper] Could not refresh branches:', err);
+    }
+    branchId = branchCodeToId.get(clean);
+  }
+
+  if (!branchId) {
+    // If not found in ITU branch list, search in courseCache
+    const fallbackList: ScrapedItuCourse[] = [];
+    for (const c of courseCache.values()) {
+      if (c.courseCode.replace(/\s+/g, '').toUpperCase().startsWith(clean)) {
+        fallbackList.push(c);
+      }
+    }
+    return fallbackList;
+  }
+
+  const cacheKey = `LS-${branchId}`;
+  const now = Date.now();
+  const lastFetched = branchLastFetchedAt.get(cacheKey) || 0;
+
+  // If fetched less than 15 seconds ago, return current branchCache to avoid overwhelming ITU OBS
+  if (now - lastFetched < 15000 && branchCache.has(cacheKey)) {
+    return branchCache.get(cacheKey)!;
+  }
+
+  // Fetch live from ITU OBS
+  const liveCourses = await fetchBranchCourses(branchId, clean, 'LS');
+  branchLastFetchedAt.set(cacheKey, now);
+  return liveCourses;
+}
+
 let isDaemonRunning = false;
 async function runServerBackgroundQuotaDaemon() {
   if (isDaemonRunning) return;
   isDaemonRunning = true;
+  daemonStats.isChecking = true;
+  daemonStats.lastCheckTime = new Date().toISOString();
+  daemonStats.nextCheckTime = new Date(Date.now() + 30000).toISOString();
+  daemonStats.checkCount++;
 
   try {
-    // 1. Check all active single monitors in Cloud SQL
+    // 1. Check all active single CRN monitors in Cloud SQL
     const activeMonitors = await getAllActiveMonitors();
+    daemonStats.activeMonitorsCount = activeMonitors?.length || 0;
+
     if (activeMonitors && activeMonitors.length > 0) {
       for (const mon of activeMonitors) {
         try {
-          const cachedCourse = ITU_COURSES_CATALOG.find((c) => c.crn === mon.crn);
-          if (!cachedCourse) continue;
+          const subject = extractSubjectPrefix(mon.courseCode || mon.department);
+          await getOrFetchBranchCoursesLive(subject);
+
+          // Find live course from courseCache (populated by fetchBranchCourses)
+          let live = courseCache.get(mon.crn);
+          if (!live) {
+            const staticFallback = ITU_COURSES_CATALOG.find((c) => c.crn === mon.crn);
+            if (staticFallback) {
+              live = {
+                crn: staticFallback.crn,
+                courseCode: staticFallback.courseCode,
+                courseTitle: staticFallback.courseTitle,
+                teachingMethod: staticFallback.teachingMethod || 'Fiziksel (Yüz yüze)',
+                instructor: staticFallback.instructor,
+                building: staticFallback.building,
+                day: staticFallback.dayTime?.split(' ')[0] || 'Pazartesi',
+                time: staticFallback.dayTime || '',
+                classroom: staticFallback.building,
+                capacity: staticFallback.capacity,
+                enrolled: staticFallback.enrolled,
+                remaining: staticFallback.remaining,
+                restrictions: staticFallback.restrictions,
+                subjectCode: subject,
+                educationLevel: 'Lisans',
+                lastScraped: new Date().toISOString()
+              };
+              courseCache.set(mon.crn, live);
+            }
+          }
+
+          if (!live) continue;
 
           const currentAvailable = mon.availableSeats || 0;
-          const liveAvailable = cachedCourse.remaining;
-          const liveCapacity = cachedCourse.capacity;
-          const liveEnrolled = cachedCourse.enrolled;
+          const liveAvailable = live.remaining;
+          const liveCapacity = live.capacity;
+          const liveEnrolled = live.enrolled;
 
-          // If available seats increased! (Seat dropped or capacity increased)
-          if (liveAvailable > currentAvailable && mon.notificationEmail) {
-            console.log(`[DAEMON ALERT] Available quota increased for CRN ${mon.crn} (${mon.courseCode}): ${currentAvailable} -> ${liveAvailable}. Sending automated email to ${mon.notificationEmail}...`);
+          // RULE: Quota opened up! (someone dropped or capacity was increased)
+          // Only send emails when available seats increase (> currentAvailable and > 0)
+          const quotaOpened = liveAvailable > currentAvailable && liveAvailable > 0;
 
+          if (quotaOpened && mon.notificationEmail) {
+            daemonStats.emailsSent++;
             const senderAddress = activeServerSmtpConfig?.senderAddress || BREVO_SMTP_DEFAULTS.user;
-            const subject = `🚨 KONTENJAN AÇILDI! - CRN ${mon.crn} (${mon.courseCode})`;
-            const body = `🚨 KONTENJAN AÇILDI!
+            const isCapacityIncrease = liveCapacity > (mon.totalCapacity || liveCapacity);
+            const eventTitle = isCapacityIncrease ? 'Kontenjan Artırıldı' : 'Kontenjan Açıldı (Biri Dersi Bıraktı)';
+
+            logDaemonEvent('alert', `🚨 ${eventTitle.toUpperCase()}! CRN ${mon.crn} (${mon.courseCode}): ${currentAvailable} -> ${liveAvailable}. Alıcı: ${mon.notificationEmail}`);
+
+            const subject = `🚨 ${eventTitle.toUpperCase()}! - CRN ${mon.crn} (${mon.courseCode})`;
+            const textBody = `🚨 ${eventTitle.toUpperCase()}!
 
 Merhaba ${mon.studentName || 'İTÜ Öğrencisi'},
 
@@ -1776,97 +1940,317 @@ Takip ettiğiniz derste yeni boş kontenjan açıldı:
 • Ders Kodu: ${mon.courseCode}
 • Ders Adı: ${mon.courseTitle}
 • CRN: ${mon.crn}
-• Öğretim Üyesi: ${mon.instructor}
+• Öğretim Üyesi: ${mon.instructor || live.instructor || 'Belirtilmedi'}
 • Boş Kontenjan: ${currentAvailable} → ${liveAvailable}
-• Doluluk: ${liveEnrolled} / ${liveCapacity}
+• Toplam Kontenjan: ${liveCapacity}
+• Kayıtlı Öğrenci: ${liveEnrolled}
 • Bildirim Zamanı: ${new Date().toLocaleString('tr-TR')}
+• OBS Ders Programı: https://obs.itu.edu.tr/public/DersProgram
 
 ⚡ ÖNEMLİ: Kontenjan tükenmeden hemen İTÜ Öğrenci Bilgi Sistemi'ne (OBS) giriş yaparak ders kaydınızı tamamlayınız!
 
 —
-İTÜ OBS Kontenjan Uyarı Sistemi (${senderAddress})`;
+İTÜ OBS 7/24 Kesintisiz Sunucu Takip Sistemi (${senderAddress})
+Bu bildirim ${mon.notificationEmail} adresi için bilgisayarınız kapalıyken dahi 7/24 çalışan sunucu robotu tarafından gönderilmiştir.`;
+
+            const htmlBody = `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                <div style="background-color: #16a34a; padding: 18px; border-radius: 8px; color: #ffffff; text-align: center; margin-bottom: 20px;">
+                  <h2 style="margin: 0; font-size: 22px;">🚨 ${eventTitle.toUpperCase()}!</h2>
+                  <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.95;">İTÜ OBS 7/24 Otomatik Sunucu Bildirimi</p>
+                </div>
+                <p style="font-size: 16px; color: #334155; line-height: 1.5;">Merhaba <strong>${mon.studentName || 'İTÜ Öğrencisi'}</strong>,</p>
+                <p style="font-size: 15px; color: #334155; line-height: 1.5;">Takip listenizdeki <strong>${mon.courseCode}</strong> dersinde yeni boş kontenjan tespit edildi:</p>
+                <div style="background-color: #f8fafc; border-left: 4px solid #16a34a; padding: 16px; border-radius: 4px; margin: 20px 0;">
+                  <p style="margin: 6px 0; color: #1e293b;"><strong>Ders Kodu:</strong> ${mon.courseCode}</p>
+                  <p style="margin: 6px 0; color: #1e293b;"><strong>Ders Adı:</strong> ${mon.courseTitle}</p>
+                  <p style="margin: 6px 0; color: #1e293b;"><strong>CRN:</strong> <span style="font-size: 18px; font-weight: 700; color: #16a34a;">${mon.crn}</span></p>
+                  <p style="margin: 6px 0; color: #1e293b;"><strong>Öğretim Üyesi:</strong> ${mon.instructor || live.instructor || 'Belirtilmedi'}</p>
+                  <p style="margin: 6px 0; color: #1e293b;"><strong>Boş Kontenjan:</strong> <strong style="color: #16a34a; font-size: 18px;">${currentAvailable} → ${liveAvailable}</strong></p>
+                  <p style="margin: 6px 0; color: #1e293b;"><strong>Doluluk:</strong> ${liveEnrolled} / ${liveCapacity}</p>
+                  <p style="margin: 6px 0; color: #64748b; font-size: 13px;"><strong>Kontrol Zamanı:</strong> ${new Date().toLocaleString('tr-TR')}</p>
+                </div>
+                <div style="text-align: center; margin: 28px 0;">
+                  <a href="https://obs.itu.edu.tr" style="background-color: #16a34a; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Hemen İTÜ OBS'ye Giriş Yap</a>
+                </div>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Bu bildirim bilgisayarınız veya tarayıcınız kapalı olsa dahi sunucuda 7/24 çalışan arka plan servisi tarafından gönderilmiştir.</p>
+              </div>
+            `;
 
             await sendOutgoingEmail({
               to: mon.notificationEmail,
               subject,
-              text: body,
+              text: textBody,
+              html: htmlBody,
               smtpConfig: activeServerSmtpConfig || undefined
             });
 
-            // Log event in Cloud SQL history
             await addQuotaHistoryEvent({
               id: 'hist-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
               monitorId: mon.id,
               userId: mon.userId,
-              type: 'capacity_increase',
+              type: isCapacityIncrease ? 'capacity_increase' : 'seat_dropped',
               oldAvailable: currentAvailable,
               newAvailable: liveAvailable,
               oldEnrolled: mon.enrolled || liveEnrolled,
               newEnrolled: liveEnrolled,
               emailDispatched: true,
               emailRecipient: mon.notificationEmail,
-              emailSubject: subject
+              emailSubject: subject,
+              notes: `Sunucu 7/24 arka plan kontrolü: Kontenjan açıldı (${currentAvailable} -> ${liveAvailable})`
             });
           }
 
-          // Update monitor in Cloud SQL
+          // Always update monitor quota & timestamp in Cloud SQL
           await updateMonitorQuota(mon.id, liveCapacity, liveEnrolled, liveAvailable);
-        } catch (monErr) {
-          console.warn(`[DAEMON] Error processing monitor ${mon.crn}:`, monErr);
+        } catch (monErr: any) {
+          logDaemonEvent('warn', `CRN ${mon.crn} kontrol edilirken hata: ${monErr.message}`);
         }
       }
     }
 
     // 2. Check all active tracked course groups in Cloud SQL
     const activeGroups = await getAllActiveTrackedGroups();
+    daemonStats.activeGroupsCount = activeGroups?.length || 0;
+
     if (activeGroups && activeGroups.length > 0) {
       for (const group of activeGroups) {
         try {
-          const liveSections = ITU_COURSES_CATALOG.filter(
-            (c) => c.courseCode.trim().toUpperCase() === group.courseCode.trim().toUpperCase()
+          const cleanGroupCode = group.courseCode.replace(/\s+/g, '').toUpperCase();
+          const subjectPrefix = extractSubjectPrefix(group.courseCode);
+          const branchCourses = await getOrFetchBranchCoursesLive(subjectPrefix);
+
+          const matchingCourses = branchCourses.filter(
+            (c) =>
+              c.courseCode.replace(/\s+/g, '').toUpperCase() === cleanGroupCode ||
+              c.courseCode.replace(/\s+/g, '').toUpperCase().startsWith(cleanGroupCode)
           );
 
-          if (liveSections.length > 0) {
-            const liveMap = new Map(liveSections.map((c) => [c.crn, c]));
-            const existingSections = Array.isArray(group.sections) ? (group.sections as any[]) : [];
-            const updatedSections = existingSections.map((sec: any) => {
-              const live = liveMap.get(sec.crn);
-              if (!live) return sec;
-              return {
-                ...sec,
-                capacity: live.capacity,
-                enrolled: live.enrolled,
-                availableSeats: live.remaining,
-                instructor: live.instructor || sec.instructor,
-                restrictions: live.restrictions || sec.restrictions,
-                lastChecked: new Date().toISOString()
-              };
-            });
+          if (matchingCourses.length === 0) continue;
 
-            const currentKnown = Array.isArray(group.knownCrns) ? group.knownCrns : [];
-            const allKnownCrns = Array.from(new Set([...currentKnown, ...liveSections.map((s) => s.crn)]));
+          const existingKnown = new Set(Array.isArray(group.knownCrns) ? group.knownCrns : []);
+          const brandNewCourses = matchingCourses.filter((c) => !existingKnown.has(c.crn));
 
-            await updateTrackedGroupSections(
-              group.id,
-              updatedSections,
-              allKnownCrns
-            );
+          let sections = Array.isArray(group.sections) ? [...(group.sections as any[])] : [];
+          let knownCrns = Array.isArray(group.knownCrns) ? [...group.knownCrns] : [];
+
+          // 1. BRAND NEW CRN DETECTED
+          if (brandNewCourses.length > 0) {
+            for (const newCourse of brandNewCourses) {
+              knownCrns.push(newCourse.crn);
+
+              const online = isCourseOnline(newCourse);
+              const matchesFilter = matchesDeliveryFilter(newCourse, (group.deliveryFilter as any) || 'all');
+
+              if (matchesFilter) {
+                const newSection = {
+                  crn: newCourse.crn,
+                  courseCode: newCourse.courseCode,
+                  courseTitle: newCourse.courseTitle,
+                  instructor: newCourse.instructor,
+                  teachingMethod: newCourse.teachingMethod || (online ? 'Çevrimiçi (Online)' : 'Fiziksel (Yüz yüze)'),
+                  isOnline: online,
+                  building: newCourse.building,
+                  dayTime: `${newCourse.day} ${newCourse.time}`.trim(),
+                  capacity: newCourse.capacity,
+                  enrolled: newCourse.enrolled,
+                  availableSeats: newCourse.remaining,
+                  lastChecked: new Date().toISOString(),
+                  restrictions: newCourse.restrictions || ''
+                };
+                sections.unshift(newSection);
+
+                daemonStats.emailsSent++;
+                logDaemonEvent('alert', `🔔 YENİ CRN AÇILDI! ${group.courseCode} - CRN ${newCourse.crn}. Alıcı: ${group.email}`);
+
+                const subject = `🔔 YENİ CRN AÇILDI: ${group.courseCode} (CRN: ${newCourse.crn}) - İTÜ OBS`;
+                const bodyText = `🔔 YENİ CRN / ŞUBE AÇILDI!
+
+Merhaba,
+
+Takip ettiğiniz ${group.courseCode} dersi için İTÜ OBS üzerinde YENİ bir CRN / Şube açılmıştır:
+
+• Ders Kodu: ${newCourse.courseCode}
+• Ders Adı: ${newCourse.courseTitle}
+• Yeni Açılan CRN: ${newCourse.crn}
+• Öğretim Üyesi: ${newCourse.instructor}
+• Öğretim Türü: ${online ? 'Çevrimiçi (Online)' : 'Fiziksel (Yüz Yüze)'}
+• Toplam Kontenjan: ${newCourse.capacity}
+• Kayıtlı: ${newCourse.enrolled}
+• Boş Kontenjan: ${newCourse.remaining}
+• Bildirim Zamanı: ${new Date().toLocaleString('tr-TR')}
+• OBS Sayfası: https://obs.itu.edu.tr/public/DersProgram
+
+⚡ Hemen İTÜ OBS'ye giriş yaparak ders seçiminizi tamamlayınız!
+
+—
+İTÜ OBS 7/24 Kesintisiz Sunucu Takip Sistemi`;
+
+                const bodyHtml = `
+                  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                    <div style="background-color: #7c3aed; padding: 18px; border-radius: 8px; color: #ffffff; text-align: center; margin-bottom: 20px;">
+                      <h2 style="margin: 0; font-size: 22px;">🔔 YENİ CRN AÇILDI!</h2>
+                      <p style="margin: 4px 0 0 0; font-size: 14px; opacity: 0.95;">İTÜ OBS 7/24 Otomatik Sunucu Bildirimi</p>
+                    </div>
+                    <p style="font-size: 16px; color: #334155; line-height: 1.5;">Merhaba,</p>
+                    <p style="font-size: 15px; color: #334155; line-height: 1.5;">Takip ettiğiniz <strong>${group.courseCode}</strong> dersi için yeni bir şube/CRN açıldı:</p>
+                    <div style="background-color: #f5f3ff; border-left: 4px solid #7c3aed; padding: 16px; border-radius: 4px; margin: 20px 0;">
+                      <p style="margin: 6px 0; color: #1e293b;"><strong>Ders Kodu:</strong> ${newCourse.courseCode}</p>
+                      <p style="margin: 6px 0; color: #1e293b;"><strong>Yeni CRN:</strong> <span style="font-size: 18px; font-weight: 700; color: #7c3aed;">${newCourse.crn}</span></p>
+                      <p style="margin: 6px 0; color: #1e293b;"><strong>Öğretim Üyesi:</strong> ${newCourse.instructor}</p>
+                      <p style="margin: 6px 0; color: #1e293b;"><strong>Öğretim Türü:</strong> ${online ? 'Çevrimiçi (Online)' : 'Fiziksel (Yüz yüze)'}</p>
+                      <p style="margin: 6px 0; color: #1e293b;"><strong>Boş Kontenjan:</strong> <strong style="color: #7c3aed; font-size: 18px;">${newCourse.remaining}</strong> (Toplam: ${newCourse.capacity})</p>
+                      <p style="margin: 6px 0; color: #64748b; font-size: 13px;"><strong>Kontrol Zamanı:</strong> ${new Date().toLocaleString('tr-TR')}</p>
+                    </div>
+                    <div style="text-align: center; margin: 28px 0;">
+                      <a href="https://obs.itu.edu.tr" style="background-color: #7c3aed; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Hemen İTÜ OBS'ye Giriş Yap</a>
+                    </div>
+                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                    <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">Bu bildirim bilgisayarınız kapalı olsa dahi 7/24 sunucu robotu tarafından gönderilmiştir.</p>
+                  </div>
+                `;
+
+                await sendOutgoingEmail({
+                  to: group.email,
+                  subject,
+                  text: bodyText,
+                  html: bodyHtml,
+                  smtpConfig: activeServerSmtpConfig || undefined
+                });
+
+                await addQuotaHistoryEvent({
+                  id: 'hist-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                  groupId: group.id,
+                  userId: group.userId,
+                  type: 'new_crn_opened',
+                  oldAvailable: 0,
+                  newAvailable: newCourse.remaining,
+                  oldEnrolled: 0,
+                  newEnrolled: newCourse.enrolled,
+                  emailDispatched: true,
+                  emailRecipient: group.email,
+                  emailSubject: subject,
+                  notes: `Sunucu 7/24 arka plan: Yeni CRN ${newCourse.crn} açıldı.`
+                });
+              }
+            }
           }
-        } catch (grpErr) {
-          console.warn(`[DAEMON] Error processing group ${group.courseCode}:`, grpErr);
+
+          // 2. CHECK EXISTING SECTIONS FOR QUOTA DROPS OR INCREASES
+          const liveMap = new Map(matchingCourses.map((c) => [c.crn, c]));
+          sections = sections.map((sec: any) => {
+            const live = liveMap.get(sec.crn);
+            if (!live) return sec;
+
+            const oldAvail = sec.availableSeats ?? 0;
+            const newAvail = live.remaining;
+
+            // Quota opened in this section!
+            if (newAvail > oldAvail && newAvail > 0) {
+              daemonStats.emailsSent++;
+              logDaemonEvent('alert', `🚨 KONTENJAN AÇILDI! ${group.courseCode} CRN ${sec.crn}: ${oldAvail} -> ${newAvail}. Alıcı: ${group.email}`);
+
+              const subject = `🚨 KONTENJAN AÇILDI! - ${group.courseCode} CRN ${sec.crn} (${oldAvail} → ${newAvail} Boş Yer)`;
+              const bodyText = `🚨 KONTENJAN AÇILDI!
+
+Merhaba,
+
+Takip ettiğiniz ${group.courseCode} dersinin ${sec.crn} numaralı CRN şubesinde yeni boş kontenjan açıldı:
+
+• Ders Kodu: ${group.courseCode}
+• CRN: ${sec.crn}
+• Öğretim Üyesi: ${sec.instructor || live.instructor || 'Belirtilmedi'}
+• Boş Kontenjan: ${oldAvail} → ${newAvail}
+• Doluluk: ${live.enrolled} / ${live.capacity}
+• Bildirim Zamanı: ${new Date().toLocaleString('tr-TR')}
+
+⚡ Hemen İTÜ OBS'ye giriş yapınız: https://obs.itu.edu.tr
+
+—
+İTÜ OBS 7/24 Kesintisiz Sunucu Takip Sistemi`;
+
+              sendOutgoingEmail({
+                to: group.email,
+                subject,
+                text: bodyText,
+                smtpConfig: activeServerSmtpConfig || undefined
+              }).catch((e) => console.warn('[DAEMON EMAIL ERROR]', e));
+
+              addQuotaHistoryEvent({
+                id: 'hist-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                groupId: group.id,
+                userId: group.userId,
+                type: 'seat_dropped',
+                oldAvailable: oldAvail,
+                newAvailable: newAvail,
+                oldEnrolled: sec.enrolled || live.enrolled,
+                newEnrolled: live.enrolled,
+                emailDispatched: true,
+                emailRecipient: group.email,
+                emailSubject: subject,
+                notes: `Sunucu 7/24 arka plan: CRN ${sec.crn} kontenjan açıldı (${oldAvail} -> ${newAvail})`
+              }).catch(() => {});
+            }
+
+            return {
+              ...sec,
+              capacity: live.capacity,
+              enrolled: live.enrolled,
+              availableSeats: live.remaining,
+              instructor: live.instructor || sec.instructor,
+              restrictions: live.restrictions || sec.restrictions,
+              lastChecked: new Date().toISOString()
+            };
+          });
+
+          // Update in Cloud SQL
+          await updateTrackedGroupSections(group.id, sections, Array.from(new Set(knownCrns)));
+        } catch (grpErr: any) {
+          logDaemonEvent('warn', `Grup ${group.courseCode} kontrol edilirken hata: ${grpErr.message}`);
         }
       }
     }
-  } catch (daemonErr) {
-    console.error('[DAEMON] Background tracking loop error:', daemonErr);
+  } catch (daemonErr: any) {
+    logDaemonEvent('warn', `Arka plan takip döngüsü hatası: ${daemonErr.message}`);
   } finally {
     isDaemonRunning = false;
+    daemonStats.isChecking = false;
   }
 }
 
 // Start continuous 24/7 background tracking interval (runs every 30 seconds)
 setInterval(runServerBackgroundQuotaDaemon, 30000);
-setTimeout(runServerBackgroundQuotaDaemon, 5000); // Initial check 5s after startup
+setTimeout(runServerBackgroundQuotaDaemon, 3000); // Initial check 3s after startup
+
+// Internal Self-Ping Keep-Alive to maintain event loop & activity
+setInterval(() => {
+  fetch('http://127.0.0.1:3000/api/health').catch(() => {});
+}, 60000);
+
+// Endpoint: Check 24/7 background daemon status & logs
+app.get('/api/daemon/status', (_req, res) => {
+  return res.json({
+    success: true,
+    serverTime: new Date().toISOString(),
+    stats: {
+      ...daemonStats,
+      smtpConfigured: Boolean(activeServerSmtpConfig?.smtpUsername || BREVO_SMTP_DEFAULTS.user),
+      smtpSender: activeServerSmtpConfig?.senderAddress || BREVO_SMTP_DEFAULTS.senderAddress
+    }
+  });
+});
+
+// Endpoint: Force manual background check trigger immediately
+app.post('/api/daemon/trigger-check', async (_req, res) => {
+  logDaemonEvent('info', 'Kullanıcı tarafından anlık sunucu kontrolü tetiklendi.');
+  runServerBackgroundQuotaDaemon().catch(() => {});
+  return res.json({
+    success: true,
+    message: 'Sunucu arka plan kontrolü anında başlatıldı.',
+    stats: daemonStats
+  });
+});
 
 // Vite Middleware Setup
 async function startServer() {

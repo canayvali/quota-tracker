@@ -1,0 +1,8 @@
+{
+  "smtpHost": "smtp-relay.brevo.com",
+  "smtpPort": 587,
+  "smtpUsername": "ba7eed001@smtp-brevo.com",
+  "smtpPassword": "bskD981CTehLLJb",
+  "senderAddress": "noreply.itudis@gmail.com",
+  "senderName": "itüdis"
+}

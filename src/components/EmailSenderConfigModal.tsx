@@ -169,7 +169,7 @@ export const EmailSenderConfigModal: React.FC<EmailSenderConfigModalProps> = ({
               <input
                 id="input-sender-address"
                 type="email"
-                placeholder="crn-alerts@university-bot.org"
+                placeholder="noreply.itudis@gmail.com"
                 value={senderAddress}
                 onChange={(e) => setSenderAddress(e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
@@ -184,7 +184,7 @@ export const EmailSenderConfigModal: React.FC<EmailSenderConfigModalProps> = ({
               <input
                 id="input-sender-name"
                 type="text"
-                placeholder="Class Quota Alert System"
+                placeholder="itüdis"
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"

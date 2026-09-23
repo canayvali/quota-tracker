@@ -38,14 +38,14 @@ export const INITIAL_SETTINGS: GlobalSettings = {
 
 export const INITIAL_EMAIL_CONFIG: EmailSenderConfig = {
   provider: 'custom_smtp',
-  senderAddress: 'ba7eed001@smtp-brevo.com',
-  senderName: 'İTÜ OBS Quota Alert System',
+  senderAddress: 'noreply.itudis@gmail.com',
+  senderName: 'itüdis',
   smtpHost: 'smtp-relay.brevo.com',
   smtpPort: 587,
   smtpUsername: 'ba7eed001@smtp-brevo.com',
   smtpPassword: 'bskD981CTehLLJb',
   isReady: true,
-  notes: 'Brevo SMTP Relay configured for automated student quota dispatch.'
+  notes: 'itüdis Brevo SMTP Relay configured for automated student quota dispatch.'
 };
 
 // No default pre-seeded user accounts - all users must sign up or sign in
@@ -291,6 +291,13 @@ export function loadEmailConfig(): EmailSenderConfig {
       return INITIAL_EMAIL_CONFIG;
     }
     const parsed = JSON.parse(raw);
+    // If the saved config was using the previous default sender address or name, update to itüdis / noreply.itudis@gmail.com
+    if (parsed.senderAddress === 'ba7eed001@smtp-brevo.com' || !parsed.senderAddress) {
+      parsed.senderAddress = 'noreply.itudis@gmail.com';
+    }
+    if (parsed.senderName === 'İTÜ OBS Quota Alert System' || !parsed.senderName) {
+      parsed.senderName = 'itüdis';
+    }
     return { ...INITIAL_EMAIL_CONFIG, ...parsed };
   } catch {
     return INITIAL_EMAIL_CONFIG;
