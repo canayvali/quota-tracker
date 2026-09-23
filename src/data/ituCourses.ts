@@ -39,7 +39,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 65,
     enrolled: 65,
     remaining: 0,
-    restrictions: 'Kısıtlama: Sadece İnşaat Mühendisliği (INS, INSE) ve Geomatik Mühendisliği (GEO) öğrencileri alabilir.'
+    restrictions: 'Kısıtlama: Sadece INS_LS, INSE_LS, GEO_LS, GEOE_LS öğrencileri alabilir.'
   },
   {
     crn: '10126',
@@ -54,7 +54,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 60,
     enrolled: 59,
     remaining: 1,
-    restrictions: 'Kısıtlama: Sadece Maden Fakültesi (MAD, JEO, PET) öğrencileri alabilir.'
+    restrictions: 'Kısıtlama: Sadece MAD_LS, JEO_LS, PET_LS öğrencileri alabilir.'
   },
 
   // BLG - Computer Engineering
@@ -71,7 +71,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 50,
     enrolled: 50,
     remaining: 0,
-    restrictions: 'Sadece Bilgisayar Müh. ve Yapay Zeka Müh.'
+    restrictions: 'Kısıtlama: BLG_LS, BLGE_LS, YZV_LS, YZVE_LS, SBR_LS, SBRE_LS'
   },
   {
     crn: '10493',
@@ -86,7 +86,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 45,
     enrolled: 44,
     remaining: 1,
-    restrictions: 'Sadece Bilgisayar Müh.'
+    restrictions: 'Kısıtlama: BLG_LS, BLGE_LS'
   },
   {
     crn: '11503',
@@ -101,7 +101,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 60,
     enrolled: 60,
     remaining: 0,
-    restrictions: 'Önşart: BLG 102E veya BLG 252E'
+    restrictions: 'Önşart: BLG 102E veya BLG 252E | Kısıtlama: BLG_LS, BLGE_LS, YZV_LS, YZVE_LS'
   },
   {
     crn: '12419',
@@ -116,7 +116,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 55,
     enrolled: 53,
     remaining: 2,
-    restrictions: 'Bilgisayar ve Bilişim Fakültesi'
+    restrictions: 'Kısıtlama: BLG_LS, BLGE_LS, YZV_LS, YZVE_LS, SBR_LS, SBRE_LS'
   },
   {
     crn: '13980',
@@ -131,7 +131,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 65,
     enrolled: 65,
     remaining: 0,
-    restrictions: 'Sadece 3. ve 4. sınıf öğrencileri'
+    restrictions: 'Kısıtlama: BLG_LS, BLGE_LS, YZV_LS, YZVE_LS (3. ve 4. sınıf)'
   },
   {
     crn: '14102',
@@ -146,7 +146,7 @@ export const ITU_COURSES_CATALOG: ItuCourse[] = [
     capacity: 70,
     enrolled: 70,
     remaining: 0,
-    restrictions: 'Önşart: BLG 223E'
+    restrictions: 'Önşart: BLG 223E | Kısıtlama: BLG_LS, BLGE_LS, YZV_LS, YZVE_LS'
   },
   {
     crn: '50104',

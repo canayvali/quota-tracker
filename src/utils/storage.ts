@@ -36,61 +36,19 @@ export const INITIAL_EMAIL_CONFIG: EmailSenderConfig = {
   notes: 'Brevo SMTP Relay configured for automated student quota dispatch.'
 };
 
-// Default registered account for Ahmet Can Ayvalı
-export const DEFAULT_USER_ACCOUNT: UserAccount = {
-  id: 'usr-ahmet-can-ayvali',
-  name: 'Ahmet Can Ayvalı',
-  email: 'ahmetcanayvali@gmail.com',
-  password: 'password123',
-  isVerified: true,
-  preferredLanguage: 'tr',
-  theme: 'light',
-  enrolledPrograms: [
-    {
-      code: 'CEV_LS',
-      nameTr: 'Çevre Mühendisliği Lisans (%30 İngilizce)',
-      nameEn: 'Environmental Engineering B.S. (30% English)',
-      degreeType: 'lisans',
-      faculty: 'İnşaat Fakültesi'
-    },
-    {
-      code: 'BLG_LS',
-      nameTr: 'Bilgisayar Mühendisliği Lisans (%30 İngilizce)',
-      nameEn: 'Computer Engineering B.S. (30% English)',
-      degreeType: 'lisans',
-      faculty: 'Bilgisayar ve Bilişim Fakültesi'
-    },
-    {
-      code: 'SUR_YD',
-      nameTr: 'Sürdürülebilirlik Yandal Programı',
-      nameEn: 'Sustainability Minor Program',
-      degreeType: 'yandal',
-      faculty: 'Disiplinlerarası Yandal'
-    }
-  ],
-  hasCompletedProgramOnboarding: true,
-  createdAt: '2026-09-01T00:00:00.000Z',
-  lastLoginAt: new Date().toISOString()
-};
-
-export const INITIAL_USERS: UserAccount[] = [DEFAULT_USER_ACCOUNT];
+// No default pre-seeded user accounts - all users must sign up or sign in
+export const INITIAL_USERS: UserAccount[] = [];
 
 export function loadUsers(): UserAccount[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_USERS);
     if (!raw) {
-      saveUsers(INITIAL_USERS);
-      return INITIAL_USERS;
+      return [];
     }
     const users: UserAccount[] = JSON.parse(raw);
-    // Ensure Ahmet Can Ayvalı's account is preserved in saved accounts list
-    if (!users.some((u) => u.email && u.email.toLowerCase() === DEFAULT_USER_ACCOUNT.email.toLowerCase())) {
-      users.unshift(DEFAULT_USER_ACCOUNT);
-      saveUsers(users);
-    }
-    return users;
+    return users.filter((u) => u.email !== 'ahmetcanayvali@gmail.com' && u.id !== 'usr-ahmet-can-ayvali');
   } catch {
-    return INITIAL_USERS;
+    return [];
   }
 }
 
@@ -106,13 +64,17 @@ export function loadCurrentUser(): UserAccount | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CURRENT_USER);
     if (!raw) {
-      saveCurrentUser(DEFAULT_USER_ACCOUNT);
-      return DEFAULT_USER_ACCOUNT;
+      return null;
     }
     const user: UserAccount = JSON.parse(raw);
+    // Discard any old hardcoded default account so user must freshly register/login
+    if (user.id === 'usr-ahmet-can-ayvali' || user.email === 'ahmetcanayvali@gmail.com') {
+      localStorage.removeItem(STORAGE_KEY_CURRENT_USER);
+      return null;
+    }
     return user;
   } catch {
-    return DEFAULT_USER_ACCOUNT;
+    return null;
   }
 }
 
@@ -288,20 +250,12 @@ export function saveEmailConfig(config: EmailSenderConfig): void {
 }
 
 export function checkAdminAuth(): boolean {
-  try {
-    return sessionStorage.getItem(STORAGE_KEY_ADMIN_AUTH) === 'true';
-  } catch {
-    return false;
-  }
+  return false;
 }
 
-export function setAdminAuth(authenticated: boolean): void {
+export function setAdminAuth(_authenticated: boolean): void {
   try {
-    if (authenticated) {
-      sessionStorage.setItem(STORAGE_KEY_ADMIN_AUTH, 'true');
-    } else {
-      sessionStorage.removeItem(STORAGE_KEY_ADMIN_AUTH);
-    }
+    sessionStorage.removeItem(STORAGE_KEY_ADMIN_AUTH);
   } catch {
     // ignore
   }
@@ -361,3 +315,62 @@ export function saveTrackedCourseGroups(groups: TrackedCourseGroup[]): void {
     // ignore
   }
 }
+
+// Background Cloud SQL API sync helpers
+export async function syncUserDataFromCloudSql(userId: string) {
+  try {
+    const res = await fetch(`/api/db/user-data?userId=${encodeURIComponent(userId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (err) {
+    console.warn('Cloud SQL sync skipped or offline:', err);
+  }
+  return null;
+}
+
+export async function syncMonitorToCloudSql(monitor: ClassMonitor) {
+  try {
+    await fetch('/api/db/monitors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(monitor),
+    });
+  } catch (err) {
+    console.warn('Failed to sync monitor to Cloud SQL:', err);
+  }
+}
+
+export async function syncTrackedGroupToCloudSql(group: TrackedCourseGroup) {
+  try {
+    await fetch('/api/db/tracked-groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(group),
+    });
+  } catch (err) {
+    console.warn('Failed to sync group to Cloud SQL:', err);
+  }
+}
+
+export async function syncUserProfileToCloudSql(user: UserAccount) {
+  try {
+    await fetch('/api/auth/sync-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid: user.id || user.email,
+        email: user.email,
+        name: user.name,
+        enrolledPrograms: user.enrolledPrograms,
+        preferredLanguage: user.preferredLanguage,
+        theme: user.theme,
+        hasCompletedProgramOnboarding: user.hasCompletedProgramOnboarding,
+      }),
+    });
+  } catch (err) {
+    console.warn('Failed to sync user profile to Cloud SQL:', err);
+  }
+}
+

@@ -4,6 +4,32 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import nodemailer from 'nodemailer';
 import { ITU_COURSES_CATALOG } from './src/data/ituCourses';
+import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
+import { db } from './src/db/index.ts';
+import { users as usersTable } from './src/db/schema.ts';
+import { eq } from 'drizzle-orm';
+import {
+  getOrCreateUser,
+  getUserByUid,
+  getUserByEmail,
+  registerUserAccount,
+  authenticateUserAccount,
+  updateUserProfile,
+  getAllUsers
+} from './src/db/users.ts';
+import {
+  getUserMonitors,
+  getAllActiveMonitors,
+  saveMonitor,
+  updateMonitorQuota,
+  deleteMonitor,
+  getUserTrackedGroups,
+  getAllActiveTrackedGroups,
+  saveTrackedGroup,
+  updateTrackedGroupSections,
+  deleteTrackedGroup,
+  addQuotaHistoryEvent,
+} from './src/db/monitors.ts';
 
 interface ScrapedItuCourse {
   crn: string;
@@ -209,7 +235,7 @@ initializeItuIndex();
 
 // API ROUTES
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', cachedCrns: courseCache.size });
 });
 
@@ -537,7 +563,7 @@ app.post('/api/email/save-config', (req, res) => {
   });
 });
 
-app.get('/api/email/config', (req, res) => {
+app.get('/api/email/config', (_req, res) => {
   return res.json({
     success: true,
     config: activeServerSmtpConfig || BREVO_SMTP_DEFAULTS
@@ -629,31 +655,6 @@ app.post('/api/email/send', async (req, res) => {
 // Authentication & 6-Digit Email Verification
 // ==========================================
 
-interface ServerUser {
-  id: string;
-  name: string;
-  email: string;
-  password?: string;
-  isVerified: boolean;
-  createdAt: string;
-  lastLoginAt: string;
-}
-
-// In-memory user database
-const serverUsers = new Map<string, ServerUser>();
-
-// Pre-seed Ahmet Can Ayvalı's account
-const defaultPreSeededUser: ServerUser = {
-  id: 'usr-ahmet-can-ayvali',
-  name: 'Ahmet Can Ayvalı',
-  email: 'ahmetcanayvali@gmail.com',
-  password: 'password123',
-  isVerified: true,
-  createdAt: '2026-09-01T00:00:00.000Z',
-  lastLoginAt: new Date().toISOString()
-};
-serverUsers.set(defaultPreSeededUser.email.toLowerCase(), defaultPreSeededUser);
-
 // Verification code store: email -> { code, name, expiresAt, attempts }
 interface VerificationRecord {
   code: string;
@@ -683,8 +684,9 @@ app.post('/api/auth/send-verification', async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    if (serverUsers.has(normalizedEmail)) {
+    // Check if user already exists in Cloud SQL database
+    const existingUser = await getUserByEmail(normalizedEmail);
+    if (existingUser) {
       return res.status(400).json({
         success: false,
         message: 'Bu e-posta adresiyle kayıtlı bir hesap zaten var. Lütfen giriş yapınız / An account with this email already exists.'
@@ -849,127 +851,123 @@ app.post('/api/auth/verify-code', (req, res) => {
   });
 });
 
-// Endpoint: Sign Up with verified code
-app.post('/api/auth/signup', (req, res) => {
-  const { name, email, password, code } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
-  const normalizedCode = (code || '').toString().trim();
+// Endpoint: Sign Up with verified code - Saves directly to Cloud SQL
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, email, password, code } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const normalizedCode = (code || '').toString().trim();
 
-  if (!name || !normalizedEmail || !password) {
-    return res.status(400).json({
-      success: false,
-      message: 'Eksik bilgi: Ad, e-posta ve şifre zorunludur.'
-    });
-  }
-
-  // Verify code
-  const record = verificationCodes.get(normalizedEmail);
-  if (!record || record.code !== normalizedCode || Date.now() > record.expiresAt) {
-    return res.status(400).json({
-      success: false,
-      message: 'Doğrulama kodu geçersiz veya süresi dolmuş. Lütfen tekrar kod isteyiniz.'
-    });
-  }
-
-  // Remove used verification code
-  verificationCodes.delete(normalizedEmail);
-
-  const newUser: ServerUser = {
-    id: 'user-' + Date.now(),
-    name: name.trim(),
-    email: normalizedEmail,
-    password: password.trim(),
-    isVerified: true,
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString()
-  };
-
-  serverUsers.set(normalizedEmail, newUser);
-
-  return res.json({
-    success: true,
-    message: 'Hesabınız başarıyla oluşturuldu! / Account created successfully!',
-    user: {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-      isVerified: true,
-      createdAt: newUser.createdAt,
-      lastLoginAt: newUser.lastLoginAt
+    if (!name || !normalizedEmail || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Eksik bilgi: Ad, e-posta ve şifre zorunludur.'
+      });
     }
-  });
+
+    // Verify code
+    const record = verificationCodes.get(normalizedEmail);
+    if (!record || record.code !== normalizedCode || Date.now() > record.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'Doğrulama kodu geçersiz veya süresi dolmuş. Lütfen tekrar kod isteyiniz.'
+      });
+    }
+
+    // Remove used verification code
+    verificationCodes.delete(normalizedEmail);
+
+    // Register in Cloud SQL
+    const user = await registerUserAccount({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: password.trim(),
+      preferredLanguage: 'tr',
+      theme: 'light'
+    });
+
+    return res.json({
+      success: true,
+      message: 'Hesabınız başarıyla oluşturuldu! / Account created successfully!',
+      user
+    });
+  } catch (err: any) {
+    console.error('[Signup Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Hesap oluşturulamadı.'
+    });
+  }
 });
 
-// Endpoint: Sign In
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
+// Endpoint: Sign In against Cloud SQL
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
 
-  const user = serverUsers.get(normalizedEmail);
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      message: 'Bu e-posta adresiyle kayıtlı bir hesap bulunamadı / No account found with this email.'
-    });
-  }
-
-  if (user.password && user.password !== (password || '').trim()) {
-    return res.status(401).json({
-      success: false,
-      message: 'Hatalı şifre / Incorrect password.'
-    });
-  }
-
-  user.lastLoginAt = new Date().toISOString();
-  serverUsers.set(normalizedEmail, user);
-
-  return res.json({
-    success: true,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      isVerified: user.isVerified,
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lütfen e-posta ve şifrenizi giriniz.'
+      });
     }
-  });
+
+    const user = await authenticateUserAccount(normalizedEmail, password);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'E-posta veya şifre hatalı. Lütfen tekrar deneyiniz / Incorrect email or password.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      user
+    });
+  } catch (err: any) {
+    console.error('[Login Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Giriş yapılırken bir hata oluştu.'
+    });
+  }
 });
 
-// Endpoint: Change Password
-app.post('/api/auth/change-password', (req, res) => {
-  const { email, currentPassword, newPassword } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
+// Endpoint: Change Password in Cloud SQL
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
 
-  const user = serverUsers.get(normalizedEmail);
-  if (!user) {
-    return res.status(404).json({
+    const user = await authenticateUserAccount(normalizedEmail, currentPassword);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Mevcut şifreniz hatalı / Current password is incorrect.'
+      });
+    }
+
+    if (!newPassword || newPassword.length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Yeni şifre en az 4 karakter olmalıdır / New password must be at least 4 characters.'
+      });
+    }
+
+    await updateUserProfile(user.id, { password: newPassword.trim() });
+
+    return res.json({
+      success: true,
+      message: 'Şifreniz başarıyla değiştirildi / Password changed successfully.'
+    });
+  } catch (err: any) {
+    console.error('[Change Password Error]:', err);
+    return res.status(500).json({
       success: false,
-      message: 'Kullanıcı bulunamadı / User not found.'
+      message: err.message || 'Şifre güncellenemedi.'
     });
   }
-
-  if (user.password && user.password !== (currentPassword || '').trim()) {
-    return res.status(401).json({
-      success: false,
-      message: 'Mevcut şifreniz hatalı / Current password is incorrect.'
-    });
-  }
-
-  if (!newPassword || newPassword.length < 4) {
-    return res.status(400).json({
-      success: false,
-      message: 'Yeni şifre en az 4 karakter olmalıdır / New password must be at least 4 characters.'
-    });
-  }
-
-  user.password = newPassword.trim();
-  serverUsers.set(normalizedEmail, user);
-
-  return res.json({
-    success: true,
-    message: 'Şifreniz başarıyla değiştirildi / Password changed successfully.'
-  });
 });
 
 // ==========================================
@@ -1132,165 +1130,561 @@ If you did not request this, please disregard this email.
 });
 
 // Endpoint: Verify Reset Code & Set New Password
-app.post('/api/auth/forgot-password/verify-and-reset', (req, res) => {
-  const { email, code, newPassword } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
-  const normalizedCode = (code || '').toString().trim();
+app.post('/api/auth/forgot-password/verify-and-reset', async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+    const normalizedCode = (code || '').toString().trim();
 
-  if (!normalizedEmail || !normalizedCode || !newPassword) {
-    return res.status(400).json({
-      success: false,
-      message: 'E-posta, 6 haneli kod ve yeni şifre alanları zorunludur.'
-    });
-  }
+    if (!normalizedEmail || !normalizedCode || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'E-posta, 6 haneli kod ve yeni şifre alanları zorunludur.'
+      });
+    }
 
-  const record = passwordResetCodes.get(normalizedEmail);
-  if (!record) {
-    return res.status(400).json({
-      success: false,
-      message: 'Şifre sıfırlama kodu bulunamadı veya süresi doldu. Lütfen tekrar sıfırlama kodu isteyiniz.'
-    });
-  }
+    const record = passwordResetCodes.get(normalizedEmail);
+    if (!record) {
+      return res.status(400).json({
+        success: false,
+        message: 'Şifre sıfırlama kodu bulunamadı veya süresi doldu. Lütfen tekrar sıfırlama kodu isteyiniz.'
+      });
+    }
 
-  if (Date.now() > record.expiresAt) {
-    passwordResetCodes.delete(normalizedEmail);
-    return res.status(400).json({
-      success: false,
-      message: 'Şifre sıfırlama kodunun süresi dolmuş. Lütfen yeni kod talep ediniz.'
-    });
-  }
-
-  if (record.code !== normalizedCode) {
-    record.attempts += 1;
-    if (record.attempts >= 5) {
+    if (Date.now() > record.expiresAt) {
       passwordResetCodes.delete(normalizedEmail);
       return res.status(400).json({
         success: false,
-        message: 'Çok fazla hatalı kod denemesi yapıldı. Lütfen yeni bir sıfırlama kodu isteyiniz.'
+        message: 'Şifre sıfırlama kodunun süresi dolmuş. Lütfen yeni kod talep ediniz.'
       });
     }
-    return res.status(400).json({
+
+    if (record.code !== normalizedCode) {
+      record.attempts += 1;
+      if (record.attempts >= 5) {
+        passwordResetCodes.delete(normalizedEmail);
+        return res.status(400).json({
+          success: false,
+          message: 'Çok fazla hatalı kod denemesi yapıldı. Lütfen yeni bir sıfırlama kodu isteyiniz.'
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Geçersiz 6 haneli kod. Kalan hak: ${5 - record.attempts}`
+      });
+    }
+
+    if (newPassword.trim().length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Yeni şifre en az 6 karakter uzunluğunda olmalıdır.'
+      });
+    }
+
+    const user = await getUserByEmail(normalizedEmail);
+    if (user) {
+      await updateUserProfile(user.id, { password: newPassword.trim() });
+    }
+
+    // Delete used code
+    passwordResetCodes.delete(normalizedEmail);
+
+    return res.json({
+      success: true,
+      message: 'Şifreniz başarıyla sıfırlandı ve güncellendi! / Password reset successfully.'
+    });
+  } catch (err: any) {
+    console.error('[Verify and Reset Password Error]:', err);
+    return res.status(500).json({
       success: false,
-      message: `Geçersiz 6 haneli kod. Kalan hak: ${5 - record.attempts}`
+      message: err.message || 'Şifre güncellenemedi.'
     });
   }
-
-  if (newPassword.trim().length < 6) {
-    return res.status(400).json({
-      success: false,
-      message: 'Yeni şifre en az 6 karakter uzunluğunda olmalıdır.'
-    });
-  }
-
-  // Update password in serverUsers if present
-  const user = serverUsers.get(normalizedEmail);
-  if (user) {
-    user.password = newPassword.trim();
-    serverUsers.set(normalizedEmail, user);
-  }
-
-  // Delete used code
-  passwordResetCodes.delete(normalizedEmail);
-
-  return res.json({
-    success: true,
-    message: 'Şifreniz başarıyla sıfırlandı ve güncellendi! / Password reset successfully.'
-  });
 });
 
 // ==========================================
-// Admin Database Accounts Management Endpoints
+// Admin Database Accounts Management Endpoints (Cloud SQL)
 // ==========================================
 
-// Endpoint: Get all server-registered accounts for Admin
-app.get('/api/admin/users', (req, res) => {
-  const usersList: ServerUser[] = [];
-  for (const user of serverUsers.values()) {
-    usersList.push({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      password: user.password,
-      isVerified: user.isVerified,
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt
+// Endpoint: Get all server-registered accounts from Cloud SQL for Admin
+app.get('/api/admin/users', async (_req, res) => {
+  try {
+    const all = await getAllUsers();
+    return res.json({
+      success: true,
+      users: all,
+      count: all.length
     });
-  }
-  return res.json({
-    success: true,
-    users: usersList,
-    count: usersList.length
-  });
-});
-
-// Endpoint: Admin Update User Account (password, name, verification, etc.)
-app.post('/api/admin/user/update', (req, res) => {
-  const { email, name, password, isVerified } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
-
-  if (!normalizedEmail) {
-    return res.status(400).json({
+  } catch (err: any) {
+    console.error('[Admin Users Error]:', err);
+    return res.status(500).json({
       success: false,
-      message: 'Kullanıcı e-posta adresi belirtilmedi.'
+      message: err.message || 'Kullanıcılar getirilemedi.'
     });
   }
-
-  let user = serverUsers.get(normalizedEmail);
-  if (!user) {
-    // If user was created in client localStorage and not in server memory yet, create it
-    user = {
-      id: 'user-' + Date.now(),
-      name: name || 'Öğrenci',
-      email: normalizedEmail,
-      password: password || '12345678',
-      isVerified: isVerified !== undefined ? isVerified : true,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString()
-    };
-  } else {
-    if (name !== undefined) user.name = name.trim();
-    if (password !== undefined && password.trim().length > 0) user.password = password.trim();
-    if (isVerified !== undefined) user.isVerified = Boolean(isVerified);
-  }
-
-  serverUsers.set(normalizedEmail, user);
-
-  return res.json({
-    success: true,
-    message: `${normalizedEmail} kullanıcısının bilgileri ve şifresi başarıyla güncellendi.`,
-    user
-  });
 });
 
-// Endpoint: Admin Delete User Account
-app.post('/api/admin/user/delete', (req, res) => {
-  const { email } = req.body || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
+// Endpoint: Admin Update User Account in Cloud SQL
+app.post('/api/admin/user/update', async (req, res) => {
+  try {
+    const { email, name, password, isVerified } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
 
-  serverUsers.delete(normalizedEmail);
-  verificationCodes.delete(normalizedEmail);
-  passwordResetCodes.delete(normalizedEmail);
+    if (!normalizedEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Kullanıcı e-posta adresi belirtilmedi.'
+      });
+    }
 
-  return res.json({
-    success: true,
-    message: `Kullanıcı ${normalizedEmail} veritabanından kalıcı olarak silindi.`
-  });
+    const user = await getUserByEmail(normalizedEmail);
+    if (!user) {
+      // Create user if not exists
+      const newUser = await registerUserAccount({
+        email: normalizedEmail,
+        name: name || 'Öğrenci',
+        password: password || '12345678'
+      });
+      return res.json({
+        success: true,
+        message: `${normalizedEmail} kullanıcısı oluşturuldu.`,
+        user: newUser
+      });
+    }
+
+    const updates: any = {};
+    if (name !== undefined) updates.displayName = name.trim();
+    if (password !== undefined && password.trim().length > 0) updates.password = password.trim();
+
+    const updated = await updateUserProfile(user.id, updates);
+    return res.json({
+      success: true,
+      message: `${normalizedEmail} kullanıcısının bilgileri başarıyla güncellendi.`,
+      user: updated
+    });
+  } catch (err: any) {
+    console.error('[Admin Update User Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Kullanıcı güncellenemedi.'
+    });
+  }
+});
+
+// Endpoint: Admin Delete User Account from Cloud SQL
+app.post('/api/admin/user/delete', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
+
+    if (normalizedEmail) {
+      await db.delete(usersTable).where(eq(usersTable.email, normalizedEmail));
+      verificationCodes.delete(normalizedEmail);
+      passwordResetCodes.delete(normalizedEmail);
+    }
+
+    return res.json({
+      success: true,
+      message: `Kullanıcı ${normalizedEmail} veritabanından kalıcı olarak silindi.`
+    });
+  } catch (err: any) {
+    console.error('[Admin Delete User Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Kullanıcı silinemedi.'
+    });
+  }
 });
 
 // Endpoint: Delete User (client self-delete)
-app.delete('/api/auth/delete-user', (req, res) => {
-  const { email } = req.body || req.query || {};
-  const normalizedEmail = (email || '').trim().toLowerCase();
+app.delete('/api/auth/delete-user', async (req, res) => {
+  try {
+    const { email } = req.body || req.query || {};
+    const normalizedEmail = (email || '').trim().toLowerCase();
 
-  serverUsers.delete(normalizedEmail);
-  verificationCodes.delete(normalizedEmail);
-  passwordResetCodes.delete(normalizedEmail);
+    if (normalizedEmail) {
+      await db.delete(usersTable).where(eq(usersTable.email, normalizedEmail));
+      verificationCodes.delete(normalizedEmail);
+      passwordResetCodes.delete(normalizedEmail);
+    }
 
-  return res.json({
-    success: true,
-    message: `Kullanıcı ${normalizedEmail} silindi / User deleted successfully.`
-  });
+    return res.json({
+      success: true,
+      message: `Kullanıcı ${normalizedEmail} silindi / User deleted successfully.`
+    });
+  } catch (err: any) {
+    console.error('[Delete User Error]:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Kullanıcı silinemedi.'
+    });
+  }
 });
+
+// ==========================================
+// Cloud SQL & Firebase Auth Synchronized API
+// ==========================================
+
+// Endpoint: Verify Firebase Auth Token Session
+app.get('/api/auth/verify-session', requireAuth, async (req: AuthRequest, res: express.Response) => {
+  try {
+    const uid = req.user?.uid;
+    if (!uid) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const user = await getUserByUid(uid);
+    return res.json({ success: true, user, tokenUser: req.user });
+  } catch (error: any) {
+    return res.status(500).json({ error: 'Failed to verify session' });
+  }
+});
+
+// Endpoint: Sync or Get User Profile from Cloud SQL
+app.post('/api/auth/sync-user', async (req: express.Request, res: express.Response) => {
+  try {
+    const { uid, email, name, enrolledPrograms, preferredLanguage, theme, hasCompletedProgramOnboarding } = req.body || {};
+    if (!uid || !email) {
+      return res.status(400).json({ error: 'UID and email are required' });
+    }
+
+    const user = await getOrCreateUser(
+      uid,
+      email,
+      name,
+      enrolledPrograms,
+      preferredLanguage,
+      theme,
+      hasCompletedProgramOnboarding
+    );
+
+    return res.json({ success: true, user });
+  } catch (error: any) {
+    console.error('Error syncing user with Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to sync user profile with Cloud SQL' });
+  }
+});
+
+// Endpoint: Update User Profile in Cloud SQL
+app.put('/api/auth/update-profile', async (req: express.Request, res: express.Response) => {
+  try {
+    const { uid, name, enrolledPrograms, preferredLanguage, theme, hasCompletedProgramOnboarding } = req.body || {};
+    if (!uid) {
+      return res.status(400).json({ error: 'UID is required' });
+    }
+
+    const updated = await updateUserProfile(uid, {
+      name,
+      enrolledPrograms,
+      preferredLanguage,
+      theme,
+      hasCompletedProgramOnboarding,
+    });
+
+    return res.json({ success: true, user: updated });
+  } catch (error: any) {
+    console.error('Error updating user profile in Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to update user profile in Cloud SQL' });
+  }
+});
+
+// Endpoint: Get all User Data (Monitors, Tracked Groups, Profile) from Cloud SQL
+app.get('/api/db/user-data', async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = (req.query.userId as string) || (req.query.uid as string);
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const [userProfile, userMonitors, userGroups] = await Promise.all([
+      getUserByUid(userId),
+      getUserMonitors(userId),
+      getUserTrackedGroups(userId),
+    ]);
+
+    return res.json({
+      success: true,
+      profile: userProfile,
+      monitors: userMonitors,
+      trackedCourseGroups: userGroups,
+    });
+  } catch (error: any) {
+    console.error('Error getting user data from Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to fetch data from Cloud SQL' });
+  }
+});
+
+// Endpoint: Save or Update Monitor in Cloud SQL
+app.post('/api/db/monitors', async (req: express.Request, res: express.Response) => {
+  try {
+    const monitorData = req.body;
+    if (!monitorData || !monitorData.id || !monitorData.userId) {
+      return res.status(400).json({ error: 'Invalid monitor data' });
+    }
+
+    const saved = await saveMonitor({
+      id: monitorData.id,
+      userId: monitorData.userId,
+      crn: monitorData.crn,
+      courseCode: monitorData.courseCode,
+      courseTitle: monitorData.courseTitle || '',
+      instructor: monitorData.instructor || '',
+      department: monitorData.department || '',
+      targetUrl: monitorData.targetUrl || '',
+      notificationEmail: monitorData.notificationEmail || '',
+      studentName: monitorData.studentName || '',
+      status: monitorData.status || 'active',
+      totalCapacity: monitorData.totalCapacity || 0,
+      enrolled: monitorData.enrolled || 0,
+      availableSeats: monitorData.availableSeats || 0,
+      alertPreference: monitorData.alertPreference || 'any_change',
+      checkIntervalSeconds: monitorData.checkIntervalSeconds || 45,
+      trackMode: monitorData.trackMode || 'crn',
+      restrictions: monitorData.restrictions || '',
+    });
+
+    return res.json({ success: true, monitor: saved });
+  } catch (error: any) {
+    console.error('Error saving monitor to Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to save monitor to Cloud SQL' });
+  }
+});
+
+// Endpoint: Delete Monitor from Cloud SQL
+app.delete('/api/db/monitors/:id', async (req: express.Request, res: express.Response) => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const rawUserId = req.query.userId;
+    const userId = (Array.isArray(rawUserId) ? rawUserId[0] : rawUserId) as string | undefined;
+    if (!id) {
+      return res.status(400).json({ error: 'Monitor ID is required' });
+    }
+
+    await deleteMonitor(id, userId);
+    return res.json({ success: true, message: 'Monitor deleted successfully' });
+  } catch (error: any) {
+    console.error('Error deleting monitor from Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to delete monitor from Cloud SQL' });
+  }
+});
+
+// Endpoint: Save or Update Tracked Course Group in Cloud SQL
+app.post('/api/db/tracked-groups', async (req: express.Request, res: express.Response) => {
+  try {
+    const groupData = req.body;
+    if (!groupData || !groupData.id || !groupData.userId) {
+      return res.status(400).json({ error: 'Invalid group data' });
+    }
+
+    const saved = await saveTrackedGroup({
+      id: groupData.id,
+      userId: groupData.userId,
+      courseCode: groupData.courseCode,
+      courseTitle: groupData.courseTitle || '',
+      email: groupData.email || '',
+      deliveryFilter: groupData.deliveryFilter || 'all',
+      sections: groupData.sections || [],
+      knownCrns: groupData.knownCrns || [],
+      status: groupData.status || 'active',
+    });
+
+    return res.json({ success: true, group: saved });
+  } catch (error: any) {
+    console.error('Error saving tracked group to Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to save tracked group to Cloud SQL' });
+  }
+});
+
+// Endpoint: Delete Tracked Course Group from Cloud SQL
+app.delete('/api/db/tracked-groups/:id', async (req: express.Request, res: express.Response) => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!id) {
+      return res.status(400).json({ error: 'Group ID is required' });
+    }
+
+    await deleteTrackedGroup(id);
+    return res.json({ success: true, message: 'Tracked group deleted successfully' });
+  } catch (error: any) {
+    console.error('Error deleting tracked group from Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to delete tracked group from Cloud SQL' });
+  }
+});
+
+// Endpoint: Record Quota History Event in Cloud SQL
+app.post('/api/db/history', async (req: express.Request, res: express.Response) => {
+  try {
+    const historyData = req.body;
+    if (!historyData || !historyData.id || !historyData.userId) {
+      return res.status(400).json({ error: 'Invalid history data' });
+    }
+
+    const saved = await addQuotaHistoryEvent({
+      id: historyData.id,
+      userId: historyData.userId,
+      monitorId: historyData.monitorId || null,
+      groupId: historyData.groupId || null,
+      type: historyData.type || 'check',
+      oldAvailable: historyData.oldAvailable || 0,
+      newAvailable: historyData.newAvailable || 0,
+      oldEnrolled: historyData.oldEnrolled || 0,
+      newEnrolled: historyData.newEnrolled || 0,
+      emailDispatched: historyData.emailDispatched || false,
+      emailRecipient: historyData.emailRecipient || null,
+      emailSubject: historyData.emailSubject || null,
+      notes: historyData.notes || null,
+    });
+
+    return res.json({ success: true, history: saved });
+  } catch (error: any) {
+    console.error('Error saving history event to Cloud SQL:', error);
+    return res.status(500).json({ error: 'Failed to save history event to Cloud SQL' });
+  }
+});
+
+// ==========================================
+// 24/7 Automated Background Quota Tracking Daemon
+// Runs continuously on the server even when users are offline or tab is closed
+// ==========================================
+
+let isDaemonRunning = false;
+async function runServerBackgroundQuotaDaemon() {
+  if (isDaemonRunning) return;
+  isDaemonRunning = true;
+
+  try {
+    // 1. Check all active single monitors in Cloud SQL
+    const activeMonitors = await getAllActiveMonitors();
+    if (activeMonitors && activeMonitors.length > 0) {
+      for (const mon of activeMonitors) {
+        try {
+          const cachedCourse = ITU_COURSES_CATALOG.find((c) => c.crn === mon.crn);
+          if (!cachedCourse) continue;
+
+          const currentAvailable = mon.availableSeats || 0;
+          const liveAvailable = cachedCourse.remaining;
+          const liveCapacity = cachedCourse.capacity;
+          const liveEnrolled = cachedCourse.enrolled;
+
+          // If available seats increased! (Seat dropped or capacity increased)
+          if (liveAvailable > currentAvailable && mon.notificationEmail) {
+            console.log(`[DAEMON ALERT] Available quota increased for CRN ${mon.crn} (${mon.courseCode}): ${currentAvailable} -> ${liveAvailable}. Sending automated email to ${mon.notificationEmail}...`);
+
+            const transporter = createTransporter(activeServerSmtpConfig ? {
+              host: activeServerSmtpConfig.smtpHost,
+              port: activeServerSmtpConfig.smtpPort,
+              user: activeServerSmtpConfig.smtpUsername,
+              pass: activeServerSmtpConfig.smtpPassword
+            } : undefined);
+
+            const senderName = activeServerSmtpConfig?.senderName || 'İTÜ OBS Quota Alert System';
+            const senderAddress = activeServerSmtpConfig?.senderAddress || BREVO_SMTP_DEFAULTS.user;
+
+            const subject = `🚨 KONTENJAN AÇILDI! - CRN ${mon.crn} (${mon.courseCode})`;
+            const body = `🚨 KONTENJAN AÇILDI!
+
+Merhaba ${mon.studentName || 'İTÜ Öğrencisi'},
+
+Takip ettiğiniz derste yeni boş kontenjan açıldı:
+
+• Ders Kodu: ${mon.courseCode}
+• Ders Adı: ${mon.courseTitle}
+• CRN: ${mon.crn}
+• Öğretim Üyesi: ${mon.instructor}
+• Boş Kontenjan: ${currentAvailable} → ${liveAvailable}
+• Doluluk: ${liveEnrolled} / ${liveCapacity}
+• Bildirim Zamanı: ${new Date().toLocaleString('tr-TR')}
+
+⚡ ÖNEMLİ: Kontenjan tükenmeden hemen İTÜ Öğrenci Bilgi Sistemi'ne (OBS) giriş yaparak ders kaydınızı tamamlayınız!
+
+—
+İTÜ OBS Kontenjan Uyarı Sistemi (${senderAddress})`;
+
+            await transporter.sendMail({
+              from: `"${senderName}" <${senderAddress}>`,
+              to: mon.notificationEmail,
+              subject,
+              text: body
+            });
+
+            // Log event in Cloud SQL history
+            await addQuotaHistoryEvent({
+              monitorId: mon.id,
+              userId: mon.userId,
+              crn: mon.crn,
+              courseCode: mon.courseCode,
+              eventType: 'capacity_increase',
+              oldAvailable: currentAvailable,
+              newAvailable: liveAvailable,
+              oldCapacity: mon.totalCapacity || liveCapacity,
+              newCapacity: liveCapacity,
+              emailDispatched: true,
+              emailRecipient: mon.notificationEmail,
+              emailSubject: subject
+            });
+          }
+
+          // Update monitor in Cloud SQL
+          await updateMonitorQuota(mon.id, {
+            totalCapacity: liveCapacity,
+            enrolled: liveEnrolled,
+            availableSeats: liveAvailable,
+            lastChecked: new Date().toISOString(),
+            lastChanged: liveAvailable !== currentAvailable ? new Date().toISOString() : undefined
+          });
+        } catch (monErr) {
+          console.warn(`[DAEMON] Error processing monitor ${mon.crn}:`, monErr);
+        }
+      }
+    }
+
+    // 2. Check all active tracked course groups in Cloud SQL
+    const activeGroups = await getAllActiveTrackedGroups();
+    if (activeGroups && activeGroups.length > 0) {
+      for (const group of activeGroups) {
+        try {
+          const liveSections = ITU_COURSES_CATALOG.filter(
+            (c) => c.courseCode.trim().toUpperCase() === group.courseCode.trim().toUpperCase()
+          );
+
+          if (liveSections.length > 0) {
+            const mappedSections = liveSections.map((c) => ({
+              crn: c.crn,
+              courseCode: c.courseCode,
+              courseTitle: c.courseTitle,
+              teachingMethod: c.teachingMethod,
+              instructor: c.instructor,
+              building: c.building,
+              day: c.day,
+              time: c.time,
+              room: c.room,
+              capacity: c.capacity,
+              enrolled: c.enrolled,
+              availableSeats: c.remaining,
+              majorRestriction: c.majorRestriction,
+              prerequisites: c.prerequisites,
+              classRestriction: c.classRestriction,
+              lastChecked: new Date().toISOString()
+            }));
+
+            await updateTrackedGroupSections(group.id, mappedSections);
+          }
+        } catch (grpErr) {
+          console.warn(`[DAEMON] Error processing group ${group.courseCode}:`, grpErr);
+        }
+      }
+    }
+  } catch (daemonErr) {
+    console.error('[DAEMON] Background tracking loop error:', daemonErr);
+  } finally {
+    isDaemonRunning = false;
+  }
+}
+
+// Start continuous 24/7 background tracking interval (runs every 30 seconds)
+setInterval(runServerBackgroundQuotaDaemon, 30000);
+setTimeout(runServerBackgroundQuotaDaemon, 5000); // Initial check 5s after startup
 
 // Vite Middleware Setup
 async function startServer() {
@@ -1303,7 +1697,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*all', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

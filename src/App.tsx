@@ -32,7 +32,11 @@ import {
   setAdminAuth,
   updateUserLanguage,
   updateUserTheme,
-  updateUserAccount
+  updateUserAccount,
+  syncMonitorToCloudSql,
+  syncTrackedGroupToCloudSql,
+  syncUserProfileToCloudSql,
+  syncUserDataFromCloudSql
 } from './utils/storage';
 import {
   generateEmailHtml,
@@ -138,7 +142,7 @@ export default function App() {
   const [monitors, setMonitors] = useState<ClassMonitor[]>(() => loadMonitors());
   const [settings, setSettings] = useState<GlobalSettings>(() => loadSettings());
   const [emailConfig, setEmailConfig] = useState<EmailSenderConfig>(() => loadEmailConfig());
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => checkAdminAuth());
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
 
   // Quick CRN Input on Main Page (only asks for CRN!)
   const [quickCrn, setQuickCrn] = useState('');
@@ -189,6 +193,7 @@ export default function App() {
       const h = window.location.hash;
       if (p === '/admin' || p.startsWith('/admin/') || h === '#/admin' || h.startsWith('#/admin/')) {
         setCurrentPath('/admin');
+        setIsAdminAuthenticated(false);
       } else {
         setCurrentPath(p);
       }
@@ -204,13 +209,30 @@ export default function App() {
     };
   }, []);
 
-  // Synchronize active admin SMTP configuration from local storage to server state on startup
+  // Synchronize active admin SMTP configuration and Cloud SQL data on startup
   useEffect(() => {
     fetch('/api/email/save-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ smtpConfig: emailConfig })
     }).catch((err) => console.error('[Initial SMTP Sync Error]:', err));
+
+    if (currentUser?.id || currentUser?.email) {
+      const uid = currentUser.id || currentUser.email;
+      syncUserDataFromCloudSql(uid).then((data) => {
+        if (data && data.success) {
+          if (data.monitors && data.monitors.length > 0) {
+            setMonitors((prev) => {
+              const map = new Map(prev.map((m) => [m.id, m]));
+              for (const m of data.monitors) {
+                map.set(m.id, { ...m, history: m.history || [] });
+              }
+              return Array.from(map.values());
+            });
+          }
+        }
+      });
+    }
   }, []);
 
   // Listen to scroll to collapse header smoothly when scrolling down
@@ -232,11 +254,15 @@ export default function App() {
   const navigateTo = (path: string) => {
     window.history.pushState(null, '', path);
     setCurrentPath(path);
+    if (path === '/admin' || path.startsWith('/admin')) {
+      setIsAdminAuthenticated(false);
+    }
   };
 
   const handleLoginSuccess = (user: UserAccount) => {
     setCurrentUser(user);
     saveCurrentUser(user);
+    syncUserProfileToCloudSql(user);
     const activeLang = user.preferredLanguage || language;
     setLanguage(activeLang);
     showToast(
@@ -265,9 +291,9 @@ export default function App() {
     setIsAdminAuthenticated(auth);
     setAdminAuth(auth);
     if (auth) {
-      showToast('Admin Logged In', 'Unlocked administrative controls (Password: HelloWorld).', 'success');
+      showToast('Yönetici Girişi Yapıldı', 'Yönetim kontrollerine erişim sağlandı.', 'success');
     } else {
-      showToast('Admin Logged Out', 'Admin session ended.', 'info');
+      showToast('Yönetici Oturumu Kapatıldı', 'Yönetici oturumu sonlandırıldı.', 'info');
     }
   };
 
@@ -658,6 +684,7 @@ export default function App() {
           }
           return [newGroup, ...prev];
         });
+        syncTrackedGroupToCloudSql(newGroup);
 
         setQuickCrn('');
         setIsQuickLoading(false);
@@ -749,6 +776,7 @@ export default function App() {
       };
 
       setMonitors((prev) => [newMonitor, ...prev]);
+      syncMonitorToCloudSql(newMonitor);
       setQuickCrn('');
       setIsQuickLoading(false);
       showToast(
@@ -775,6 +803,7 @@ export default function App() {
       }
       return [newGroup, ...prev];
     });
+    syncTrackedGroupToCloudSql(newGroup);
     setIsAddModalOpen(false);
     showToast(
       language === 'en' ? 'Course Group Monitored' : 'Toplu Ders Takibi Başlatıldı',
@@ -1713,7 +1742,10 @@ export default function App() {
   if (isAdminRoute) {
     return (
       <AdminPage
-        onExit={() => navigateTo('/')}
+        onExit={() => {
+          setIsAdminAuthenticated(false);
+          navigateTo('/');
+        }}
         monitors={monitors}
         emailConfig={emailConfig}
         settings={settings}

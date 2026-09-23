@@ -445,25 +445,29 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Ana Sayfa</span>
             </button>
-            <div className="h-4 w-px bg-stone-200" />
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-white font-bold text-xs">
-                OBS
-              </div>
-              <div>
+
+            {isAdminAuthenticated && (
+              <>
+                <div className="h-4 w-px bg-stone-200" />
                 <div className="flex items-center gap-2">
-                  <h1 className="font-bold text-sm text-stone-900 leading-tight">İTÜ OBS Yönetim Paneli</h1>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-mono border border-stone-200">
-                    /admin
-                  </span>
+                  <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-white font-bold text-xs">
+                    OBS
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h1 className="font-bold text-sm text-stone-900 leading-tight">İTÜ OBS Yönetim Paneli</h1>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-mono border border-stone-200">
+                        /admin
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-[11px] text-stone-400">Yalnızca URL /admin adresi üzerinden erişilebilir</p>
-              </div>
-            </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
-            {isAdminAuthenticated ? (
+            {isAdminAuthenticated && (
               <div className="flex items-center gap-3">
                 <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-medium">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -478,26 +482,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   <span>Çıkış Yap</span>
                 </button>
               </div>
-            ) : (
-              <span className="text-xs text-stone-400 font-mono">Varsayılan Parola: HelloWorld</span>
             )}
           </div>
         </div>
       </header>
 
       {/* Main Body */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center">
         {!isAdminAuthenticated ? (
-          /* Authentication Form (Full Page Card) */
-          <div className="max-w-md mx-auto my-12 bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-sm">
-            <div className="text-center space-y-3 mb-6">
-              <div className="w-12 h-12 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto text-stone-800">
-                <Lock className="w-6 h-6" />
+          /* Ultra-clean and Minimalist Authentication Form */
+          <div className="max-w-sm mx-auto w-full my-auto bg-white rounded-2xl p-6 sm:p-8 border border-stone-200 shadow-sm">
+            <div className="text-center space-y-2 mb-6">
+              <div className="w-10 h-10 bg-stone-100 rounded-xl flex items-center justify-center mx-auto text-stone-800">
+                <Lock className="w-5 h-5" />
               </div>
-              <h2 className="text-xl font-bold text-stone-900">Yönetici Girişi</h2>
-              <p className="text-xs text-stone-500 leading-relaxed">
-                Bu yönetim sekmesine yalnızca yetkili yöneticiler erişebilir. E-posta sunucusu (SMTP) ayarlarını ve öğrenci takiplerini yönetmek için şifrenizi giriniz.
-              </p>
+              <h2 className="text-lg font-bold text-stone-900">Yönetici Girişi</h2>
             </div>
 
             {authError && (
@@ -509,7 +508,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-stone-800 mb-1">
+                <label className="block text-xs font-semibold text-stone-800 mb-1.5">
                   Yönetici Parolası
                 </label>
                 <PasswordInput
@@ -519,9 +518,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                   value={enteredPassword}
                   onChange={(e) => setEnteredPassword(e.target.value)}
                 />
-                <p className="text-[11px] text-stone-400 mt-1">
-                  İlk kurulum varsayılanı: <code className="text-stone-700 font-mono bg-stone-100 px-1 py-0.5 rounded">HelloWorld</code>
-                </p>
               </div>
 
               <button
@@ -530,7 +526,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                 className="w-full py-2.5 px-4 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
               >
                 <Key className="w-4 h-4" />
-                <span>Giriş Yap ve Yönetim Panelini Aç</span>
+                <span>Giriş Yap</span>
               </button>
             </form>
           </div>

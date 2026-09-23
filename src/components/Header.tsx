@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
         pointerEvents: isScrolled ? 'none' : 'auto'
       }}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
         {/* LEFT SIDE: Profile Button & Dropdown Menu */}
         <div className="relative" ref={dropdownRef} style={{ pointerEvents: 'auto' }}>
           <motion.button
@@ -292,6 +292,18 @@ export const Header: React.FC<HeaderProps> = ({
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+
+        {/* CENTER: itüdis logo mark */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto select-none flex items-center justify-center">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-stone-100/90 dark:bg-stone-800/90 border border-stone-200/80 dark:border-stone-700/80 shadow-2xs backdrop-blur-xs transition-all hover:scale-105 cursor-default">
+            <span className={`text-xs sm:text-sm font-extrabold tracking-tight lowercase font-sans ${
+              isDark ? 'text-stone-100' : 'text-stone-900'
+            }`}>
+              itü<span className="text-emerald-600 dark:text-emerald-400 font-black">dis</span>
+            </span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-xs ring-2 ring-emerald-500/20 animate-pulse" />
+          </div>
         </div>
 
         {/* RIGHT SIDE: İTÜ OBS Tarayıcı & CRN Ekle only */}

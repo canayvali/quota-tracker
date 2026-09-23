@@ -239,25 +239,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
         {/* Auth Challenge Screen (if not logged in) */}
         {!isAdminAuthenticated ? (
-          <div className="p-8 sm:p-12 flex flex-col items-center justify-center text-center max-w-md mx-auto my-auto">
-            <div className="h-14 w-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mb-4 shadow-inner">
-              <Lock className="h-7 w-7" />
+          <div className="p-8 sm:p-12 flex flex-col items-center justify-center text-center max-w-sm mx-auto my-auto">
+            <div className="h-12 w-12 rounded-2xl bg-stone-100 text-stone-800 flex items-center justify-center mb-4">
+              <Lock className="h-6 w-6" />
             </div>
-            <h3 className="text-lg font-bold text-stone-900 mb-1">
-              Admin Password Required
+            <h3 className="text-lg font-bold text-stone-900 mb-6">
+              Yönetici Girişi
             </h3>
-            <p className="text-xs text-stone-500 mb-6">
-              This administrative view is restricted strictly to password owners to manage outgoing server email accounts and audit student trackers.
-            </p>
 
             <form onSubmit={handleLogin} className="w-full space-y-4">
               <div className="relative text-left">
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Master Admin Password
+                <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                  Yönetici Parolası
                 </label>
                 <PasswordInput
                   id="admin-master-password"
-                  placeholder="Enter password..."
+                  placeholder="Yönetici parolanızı giriniz..."
                   value={enteredPassword}
                   onChange={(e) => {
                     setEnteredPassword(e.target.value);
@@ -280,14 +277,8 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 type="submit"
                 className="w-full py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-colors shadow-xs cursor-pointer"
               >
-                Authenticate & Unlock Admin Panel
+                Giriş Yap
               </button>
-
-              <div className="pt-2 text-center">
-                <div className="text-[11px] text-stone-400 bg-stone-100 rounded-lg p-2 font-mono">
-                  Default password: <code className="font-bold text-stone-700">HelloWorld</code>
-                </div>
-              </div>
             </form>
           </div>
         ) : (
