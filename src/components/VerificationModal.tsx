@@ -178,10 +178,12 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
         );
       }
 
-      // 2. Save user locally with preferred language
+      // 2. Save user locally with preferred language and trigger onboarding
       const verifiedUser: UserAccount = {
         ...data.user,
-        preferredLanguage: language || 'tr'
+        preferredLanguage: language || 'tr',
+        enrolledPrograms: [],
+        hasCompletedProgramOnboarding: false
       };
 
       const users = loadUsers();

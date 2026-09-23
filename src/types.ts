@@ -17,6 +17,14 @@ export type AlertTriggerPreference = 'any_change' | 'seats_opened_only' | 'waitl
 export type AppLanguage = 'tr' | 'en';
 export type AppTheme = 'light' | 'dark';
 
+export interface ItuProgram {
+  code: string; // e.g. "CEV", "CEVE", "BLG", "SUR-YAN"
+  nameTr: string; // e.g. "Çevre Mühendisliği Lisans"
+  nameEn: string;
+  degreeType: 'lisans' | 'yandal' | 'cap' | 'lisansustu';
+  faculty?: string;
+}
+
 export interface UserAccount {
   id: string;
   name: string;
@@ -25,6 +33,8 @@ export interface UserAccount {
   isVerified?: boolean;
   preferredLanguage?: AppLanguage;
   theme?: AppTheme;
+  enrolledPrograms?: ItuProgram[];
+  hasCompletedProgramOnboarding?: boolean;
   createdAt: string;
   lastLoginAt: string;
 }
@@ -44,6 +54,7 @@ export interface CourseGroupSection {
   enrolled: number;
   availableSeats: number;
   lastChecked: string;
+  restrictions?: string;
 }
 
 export interface TrackedCourseGroup {
@@ -87,6 +98,7 @@ export interface ClassMonitor {
   history: QuotaHistoryEvent[];
   trackMode?: 'crn' | 'course_code';
   trackedCourseCode?: string;
+  restrictions?: string;
 }
 
 export interface EmailSenderConfig {

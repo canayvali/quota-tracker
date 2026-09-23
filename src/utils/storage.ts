@@ -45,6 +45,30 @@ export const DEFAULT_USER_ACCOUNT: UserAccount = {
   isVerified: true,
   preferredLanguage: 'tr',
   theme: 'light',
+  enrolledPrograms: [
+    {
+      code: 'CEV_LS',
+      nameTr: 'Çevre Mühendisliği Lisans (%30 İngilizce)',
+      nameEn: 'Environmental Engineering B.S. (30% English)',
+      degreeType: 'lisans',
+      faculty: 'İnşaat Fakültesi'
+    },
+    {
+      code: 'BLG_LS',
+      nameTr: 'Bilgisayar Mühendisliği Lisans (%30 İngilizce)',
+      nameEn: 'Computer Engineering B.S. (30% English)',
+      degreeType: 'lisans',
+      faculty: 'Bilgisayar ve Bilişim Fakültesi'
+    },
+    {
+      code: 'SUR_YD',
+      nameTr: 'Sürdürülebilirlik Yandal Programı',
+      nameEn: 'Sustainability Minor Program',
+      degreeType: 'yandal',
+      faculty: 'Disiplinlerarası Yandal'
+    }
+  ],
+  hasCompletedProgramOnboarding: true,
   createdAt: '2026-09-01T00:00:00.000Z',
   lastLoginAt: new Date().toISOString()
 };

@@ -25,6 +25,38 @@ export const ITU_SUBJECT_OPTIONS: SubjectOption[] = [
 ];
 
 export const ITU_COURSES_CATALOG: ItuCourse[] = [
+  // Special test CRNs with department restrictions
+  {
+    crn: '10125',
+    subjectCode: 'INS',
+    courseCode: 'INS 201',
+    courseTitle: 'Statik ve Mukavemet',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Prof. Dr. Alper İlki',
+    building: 'İNB D-101',
+    dayTime: 'Pazartesi 09:30 - 12:30',
+    capacity: 65,
+    enrolled: 65,
+    remaining: 0,
+    restrictions: 'Kısıtlama: Sadece İnşaat Mühendisliği (INS, INSE) ve Geomatik Mühendisliği (GEO) öğrencileri alabilir.'
+  },
+  {
+    crn: '10126',
+    subjectCode: 'INS',
+    courseCode: 'INS 201',
+    courseTitle: 'Statik ve Mukavemet',
+    educationLevel: 'lisans',
+    teachingMethod: 'Yüz Yüze',
+    instructor: 'Doç. Dr. Kutlu Darılmaz',
+    building: 'İNB D-105',
+    dayTime: 'Salı 13:30 - 16:30',
+    capacity: 60,
+    enrolled: 59,
+    remaining: 1,
+    restrictions: 'Kısıtlama: Sadece Maden Fakültesi (MAD, JEO, PET) öğrencileri alabilir.'
+  },
+
   // BLG - Computer Engineering
   {
     crn: '10492',

@@ -308,6 +308,12 @@ export const CourseGroupCard: React.FC<CourseGroupCardProps> = ({
                             {section.dayTime} {section.building ? `• ${section.building}` : ''}
                           </div>
                         )}
+
+                        {section.restrictions && (
+                          <div className="text-[9px] text-amber-700 dark:text-amber-300 font-mono mt-0.5 truncate">
+                            {section.restrictions}
+                          </div>
+                        )}
                       </div>
 
                       {/* Right: Quota Numbers & Availability Badge */}

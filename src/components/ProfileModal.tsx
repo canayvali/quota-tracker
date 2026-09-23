@@ -3,19 +3,24 @@ import {
   AlertCircle,
   CheckCircle2,
   Globe,
+  GraduationCap,
   KeyRound,
   LogOut,
   Moon,
+  Plus,
+  Search,
   ShieldCheck,
   Sun,
+  Trash2,
   User,
   X
 } from 'lucide-react';
-import { AppLanguage, AppTheme, UserAccount } from '../types';
+import { AppLanguage, AppTheme, ItuProgram, UserAccount } from '../types';
 import { PasswordInput } from './PasswordInput';
-import { updateUserPassword, deleteUserAccount } from '../utils/storage';
+import { updateUserPassword, deleteUserAccount, updateUserAccount } from '../utils/storage';
 import { TRANSLATIONS } from '../utils/translations';
 import { LanguageSelector } from './LanguageSelector';
+import { searchItuPrograms, findOrCreateProgram } from '../data/ituPrograms';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -53,6 +58,52 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // ITU Programs State
+  const [userPrograms, setUserPrograms] = useState<ItuProgram[]>(
+    currentUser.enrolledPrograms || []
+  );
+  const [programSearch, setProgramSearch] = useState('');
+  const [customProgramInput, setCustomProgramInput] = useState('');
+  const [programSuccessMsg, setProgramSuccessMsg] = useState<string | null>(null);
+
+  const handleAddProgramToUser = (prog: ItuProgram) => {
+    if (userPrograms.some((p) => p.code === prog.code)) return;
+    const updated = [...userPrograms, prog];
+    setUserPrograms(updated);
+    const updatedAccount: UserAccount = {
+      ...currentUser,
+      enrolledPrograms: updated
+    };
+    updateUserAccount(currentUser.email, { enrolledPrograms: updated });
+    onUpdateUser(updatedAccount);
+    setProgramSearch('');
+    setProgramSuccessMsg(
+      language === 'tr'
+        ? `"${prog.nameTr}" programınız eklendi.`
+        : `Program "${prog.nameEn}" added.`
+    );
+    setTimeout(() => setProgramSuccessMsg(null), 3000);
+  };
+
+  const handleRemoveProgramFromUser = (code: string) => {
+    const updated = userPrograms.filter((p) => p.code !== code);
+    setUserPrograms(updated);
+    const updatedAccount: UserAccount = {
+      ...currentUser,
+      enrolledPrograms: updated
+    };
+    updateUserAccount(currentUser.email, { enrolledPrograms: updated });
+    onUpdateUser(updatedAccount);
+  };
+
+  const handleAddCustomProgram = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customProgramInput.trim()) return;
+    const prog = findOrCreateProgram(customProgramInput.trim());
+    handleAddProgramToUser(prog);
+    setCustomProgramInput('');
+  };
 
   if (!isOpen) return null;
 
@@ -287,6 +338,131 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 onChangeLanguage={onChangeLanguage}
                 variant="profile"
               />
+            </div>
+          </div>
+
+          {/* Enrolled ITU Programs (Bölümlerim & Yandal) Section */}
+          <div className="space-y-4 pt-2 border-t border-stone-200 dark:border-stone-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-bold text-stone-900 dark:text-stone-100">
+                <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <h3>{language === 'tr' ? 'Kayıtlı İTÜ Programlarım (Bölüm / ÇAP / Yandal)' : 'Enrolled ITU Programs (Major / Minor)'}</h3>
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300">
+                {userPrograms.length} {language === 'tr' ? 'Program' : 'Programs'}
+              </span>
+            </div>
+
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+              {language === 'tr'
+                ? 'Ders takibinde yalnızca alabildiğiniz şubelerin seçilmesini ve uyarı verilmesini sağlar.'
+                : 'Filters course sections according to major eligibility and warns when ineligible.'}
+            </p>
+
+            {programSuccessMsg && (
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>{programSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Program Chips */}
+            <div className="space-y-2">
+              {userPrograms.length === 0 ? (
+                <div className="p-3.5 rounded-xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800/40 text-center text-xs text-stone-500">
+                  {language === 'tr'
+                    ? 'Henüz bir bölüm eklenmemiş. Aşağıdan arayarak ekleyin.'
+                    : 'No program configured. Search and add below.'}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {userPrograms.map((prog) => (
+                    <div
+                      key={prog.code}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-200 text-xs font-medium"
+                    >
+                      <span className="font-bold font-mono px-1 py-0.2 bg-blue-200/80 dark:bg-blue-900 text-blue-900 dark:text-blue-100 rounded text-[10px]">
+                        {prog.code}
+                      </span>
+                      <span>{prog.nameTr}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProgramFromUser(prog.code)}
+                        className="p-0.5 text-blue-400 hover:text-red-500 rounded-full transition-colors ml-0.5"
+                        title={language === 'tr' ? 'Kaldır' : 'Remove'}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Add Program Search */}
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={programSearch}
+                  onChange={(e) => setProgramSearch(e.target.value)}
+                  placeholder={
+                    language === 'tr'
+                      ? 'Yeni program ara (Örn: Çevre, BLG, Sürdürülebilirlik)...'
+                      : 'Search program (e.g. CEV, BLG, Sustainability)...'
+                  }
+                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800/80 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {programSearch.trim() && (
+                <div className="max-h-36 overflow-y-auto border border-stone-200 dark:border-stone-700 rounded-xl divide-y divide-stone-100 dark:divide-stone-800 bg-white dark:bg-stone-800 shadow-lg">
+                  {searchItuPrograms(programSearch)
+                    .filter((p) => !userPrograms.some((up) => up.code === p.code))
+                    .slice(0, 6)
+                    .map((prog) => (
+                      <button
+                        key={prog.code}
+                        type="button"
+                        onClick={() => handleAddProgramToUser(prog)}
+                        className="w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 bg-stone-100 dark:bg-stone-700 rounded">
+                            {prog.code}
+                          </span>
+                          <span className="truncate font-medium text-stone-800 dark:text-stone-200">
+                            {prog.nameTr}
+                          </span>
+                        </div>
+                        <span className="shrink-0 flex items-center gap-0.5 text-[11px] text-blue-600 font-semibold group-hover:underline">
+                          <Plus className="w-3 h-3" />
+                          {language === 'tr' ? 'Ekle' : 'Add'}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              {/* Custom Program Input form */}
+              <form onSubmit={handleAddCustomProgram} className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={customProgramInput}
+                  onChange={(e) => setCustomProgramInput(e.target.value)}
+                  placeholder={language === 'tr' ? 'Listede olmayan özel program / yandal yazın...' : 'Custom program name...'}
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800/60 text-xs text-stone-800 dark:text-stone-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!customProgramInput.trim()}
+                  className="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 disabled:opacity-40 text-xs font-semibold text-stone-800 dark:text-stone-200 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  {language === 'tr' ? 'Ekle' : 'Add'}
+                </button>
+              </form>
             </div>
           </div>
 

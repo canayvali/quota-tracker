@@ -31,7 +31,8 @@ import {
   saveTrackedCourseGroups,
   setAdminAuth,
   updateUserLanguage,
-  updateUserTheme
+  updateUserTheme,
+  updateUserAccount
 } from './utils/storage';
 import {
   generateEmailHtml,
@@ -41,7 +42,7 @@ import {
   simulateDropSeat
 } from './utils/quotaService';
 import { fetchCourseByCrn, fetchCoursesByCourseCode, simulateNewCrnOnServer } from './utils/ituScraperService';
-import { getDeliveryFilterLabel, matchesDeliveryFilter, isCourseOnline } from './utils/courseUtils';
+import { getDeliveryFilterLabel, matchesDeliveryFilter, isCourseOnline, checkCourseEligibility } from './utils/courseUtils';
 import { TRANSLATIONS } from './utils/translations';
 
 import { Header } from './components/Header';
@@ -55,6 +56,7 @@ import { ItuObsBrowserModal } from './components/ItuObsBrowserModal';
 import { AdminPage } from './components/AdminPage';
 import { AuthPage } from './components/AuthPage';
 import { ProfileModal } from './components/ProfileModal';
+import { ProgramOnboardingModal } from './components/ProgramOnboardingModal';
 
 export default function App() {
   // Navigation / Routing (/admin vs /) - supports direct /admin path or #/admin
@@ -150,6 +152,7 @@ export default function App() {
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [modalInitialCourseCode, setModalInitialCourseCode] = useState<string>('');
   const [isEmailConfigModalOpen, setIsEmailConfigModalOpen] = useState(false);
   const [isItuObsBrowserOpen, setIsItuObsBrowserOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(() => window.location.pathname === '/profile');
@@ -570,7 +573,34 @@ export default function App() {
         }
 
         const normalized = cleanInput.replace(/\s+/g, '').toUpperCase();
-        const matchingSections: CourseGroupSection[] = courses.map((c) => ({
+
+        // Check user's program eligibility for batch tracking
+        const hasEnrolledPrograms =
+          currentUser.enrolledPrograms && currentUser.enrolledPrograms.length > 0;
+
+        let eligibleCourses = courses;
+        let ineligibleCourses: ItuCourse[] = [];
+
+        if (hasEnrolledPrograms) {
+          eligibleCourses = courses.filter(
+            (c) => checkCourseEligibility(c, currentUser.enrolledPrograms).isEligible
+          );
+          ineligibleCourses = courses.filter(
+            (c) => !checkCourseEligibility(c, currentUser.enrolledPrograms).isEligible
+          );
+        }
+
+        // If there are ineligible / restricted sections, open the modal asking specifically for those:
+        if (ineligibleCourses.length > 0) {
+          setIsQuickLoading(false);
+          setModalInitialCourseCode(normalized);
+          setIsAddModalOpen(true);
+          return;
+        }
+
+        // If ALL sections are eligible (no warning / no blocked sections):
+        // Add them immediately without prompt!
+        const matchingSections: CourseGroupSection[] = eligibleCourses.map((c) => ({
           crn: c.crn,
           courseCode: c.courseCode,
           courseTitle: c.courseTitle,
@@ -582,7 +612,8 @@ export default function App() {
           capacity: c.capacity,
           enrolled: c.enrolled,
           availableSeats: c.remaining,
-          lastChecked: new Date().toISOString()
+          lastChecked: new Date().toISOString(),
+          restrictions: c.restrictions
         }));
 
         const totalAvail = matchingSections.reduce((acc, s) => acc + s.availableSeats, 0);
@@ -596,7 +627,7 @@ export default function App() {
           email: currentUser.email,
           deliveryFilter: 'all',
           sections: matchingSections,
-          knownCrns: courses.map((c) => c.crn),
+          knownCrns: eligibleCourses.map((c) => c.crn),
           status: 'active',
           createdAt: new Date().toISOString(),
           lastChecked: new Date().toISOString(),
@@ -613,7 +644,7 @@ export default function App() {
               emailDispatched: false,
               emailRecipient: email,
               emailSubject: `Toplu ders takibi: ${normalized}`,
-              notes: `${courses.length} şube tek bir kutuda takibe alındı.`
+              notes: `${eligibleCourses.length} şube tek bir kutuda takibe alındı.`
             }
           ]
         };
@@ -633,8 +664,8 @@ export default function App() {
         showToast(
           language === 'en' ? 'Course Monitored' : 'Toplu Ders Takibi Başlatıldı',
           language === 'en'
-            ? `${normalized} (${courses.length} sections) is now monitored in a single unified box.`
-            : `${normalized} dersi (${courses.length} şube) tek bir kutuda takibe alındı.`,
+            ? `${normalized} (${eligibleCourses.length} sections) is now monitored.`
+            : `${normalized} dersi (${eligibleCourses.length} şube) başarıyla takibe alındı.`,
           'success'
         );
         return;
@@ -664,6 +695,20 @@ export default function App() {
       const result = await fetchCourseByCrn(cleanInput);
       const course = result.course;
 
+      // Check program eligibility
+      const eligibility = checkCourseEligibility(course, currentUser.enrolledPrograms);
+      if (!eligibility.isEligible && currentUser.enrolledPrograms && currentUser.enrolledPrograms.length > 0) {
+        setIsQuickLoading(false);
+        // Open Add modal with warning so the user can see restrictions and explicitly confirm
+        setIsAddModalOpen(true);
+        setQuickError(
+          language === 'tr'
+            ? `CRN ${course.crn} (${course.courseCode}) kayıtlı bölümleriniz için uygun görünmüyor. Onaylamak için modalı kullanın.`
+            : `CRN ${course.crn} is restricted for your major.`
+        );
+        return;
+      }
+
       const newMonitor: ClassMonitor = {
         id: 'mon-' + Date.now(),
         userId: currentUser.id,
@@ -685,6 +730,7 @@ export default function App() {
         alertPreference: 'any_change',
         checkIntervalSeconds: 45,
         trackMode: 'crn',
+        restrictions: course.restrictions,
         history: [
           {
             id: 'hist-' + Date.now(),
@@ -2048,13 +2094,17 @@ export default function App() {
       {/* Modals & Dialogs */}
       <AddCrnModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setModalInitialCourseCode('');
+        }}
         onAddMonitor={handleAddMonitor}
         currentUser={currentUser}
         defaultQuotaUrl={settings.defaultQuotaUrl}
         onOpenItuBrowser={() => setIsItuObsBrowserOpen(true)}
         language={language}
         onAddCourseGroup={handleAddCourseGroup}
+        initialCourseCode={modalInitialCourseCode}
       />
 
       <ItuObsBrowserModal
@@ -2122,7 +2172,11 @@ export default function App() {
           onUpdateUser={(updated) => {
             setCurrentUser(updated);
             saveCurrentUser(updated);
-            showToast(t.passwordUpdatedToast, t.passwordUpdatedToastDesc, 'success');
+            showToast(
+              language === 'tr' ? 'Profil Güncellendi' : 'Profile Updated',
+              language === 'tr' ? 'Bilgileriniz ve program tercihleriniz başarıyla kaydedildi.' : 'Your details and program choices have been saved.',
+              'success'
+            );
           }}
           onSignOut={handleSignOut}
           monitorsCount={monitors.length}
@@ -2130,6 +2184,41 @@ export default function App() {
           onChangeLanguage={handleLanguageChange}
           theme={theme}
           onChangeTheme={handleThemeChange}
+        />
+      )}
+
+      {/* Program Onboarding Modal for First Login or Registration */}
+      {currentUser && (
+        <ProgramOnboardingModal
+          isOpen={currentUser.hasCompletedProgramOnboarding === false}
+          onClose={() => {
+            const updated = { ...currentUser, hasCompletedProgramOnboarding: true };
+            setCurrentUser(updated);
+            saveCurrentUser(updated);
+            updateUserAccount(currentUser.email, { hasCompletedProgramOnboarding: true });
+          }}
+          onSavePrograms={(programs) => {
+            const updated = {
+              ...currentUser,
+              enrolledPrograms: programs,
+              hasCompletedProgramOnboarding: true
+            };
+            setCurrentUser(updated);
+            saveCurrentUser(updated);
+            updateUserAccount(currentUser.email, {
+              enrolledPrograms: programs,
+              hasCompletedProgramOnboarding: true
+            });
+            showToast(
+              language === 'tr' ? 'Bölüm Tercihleri Kaydedildi' : 'Programs Saved',
+              language === 'tr'
+                ? `${programs.length} program tanımlandı. Ders takipleri buna göre filtrelenecektir.`
+                : `${programs.length} programs set. Course tracking is now customized.`,
+              'success'
+            );
+          }}
+          initialPrograms={currentUser.enrolledPrograms || []}
+          language={language}
         />
       )}
 
